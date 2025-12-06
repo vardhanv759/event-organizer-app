@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "955295317140",
+    "project_id": "event-discrovery-app",
+    "storage_bucket": "event-discrovery-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:955295317140:android:466c245ac73f63ebdec881",
+        "android_client_info": {
+          "package_name": "com.example.event_discovery_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "955295317140-6nbt2r37rh6vlqe2t6fk1b1ot14eosaq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEe_69-F9ZlurBKcwaYIEs-gE35ZQWdvI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "955295317140-6nbt2r37rh6vlqe2t6fk1b1ot14eosaq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "955295317140-f01kp6r6sj0rpoj9gqgaapd6ugrmt0ae.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.eventDiscoveryApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
