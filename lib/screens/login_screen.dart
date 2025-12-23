@@ -141,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen>
       } else {
         // NOTE: If you used this before and it works, keep it.
         // If you get an error, replace `authenticate()` with `signIn()`.
-        final GoogleSignInAccount? googleUser = await GoogleSignIn.instance
+        final GoogleSignInAccount googleUser = await GoogleSignIn.instance
             .authenticate();
 
         if (googleUser == null) {
@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        final googleAuth = await googleUser.authentication;
+        final googleAuth = googleUser.authentication;
         final credential = GoogleAuthProvider.credential(
           idToken: googleAuth.idToken,
         );

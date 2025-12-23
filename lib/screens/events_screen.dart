@@ -1,99 +1,478 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'dart:ui';
 
 /// ===============================
-/// EVENTS LIST (current + upcoming)
+/// WEMBLEY EVENTS (now -> +1 year)
 /// ===============================
-class EventsListScreen extends StatelessWidget {
+class EventsListScreen extends StatefulWidget {
   const EventsListScreen({super.key});
 
   @override
+  State<EventsListScreen> createState() => _EventsListScreenState();
+}
+
+class _EventsListScreenState extends State<EventsListScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  String _selectedCategory = 'All';
+  String _searchQuery = '';
+
+  final List<String> categories = [
+    'All',
+    'Music',
+    'Sports',
+    'Theater',
+    'Comedy',
+    'Festivals',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _eventsStream() {
+    final now = Timestamp.now();
+    final oneYearLater = Timestamp.fromDate(
+      DateTime.now().add(const Duration(days: 365)),
+    );
+
+    var query =
+        FirebaseFirestore.instance
+                .collection('events_wembley')
+                .where('startDateTime', isGreaterThanOrEqualTo: now)
+                .where('startDateTime', isLessThanOrEqualTo: oneYearLater)
+                .orderBy('startDateTime')
+            as Query<Map<String, dynamic>>;
+
+    return query.snapshots();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-
-    final query = FirebaseFirestore.instance
-        .collection('events')
-        // keep only events that are about to start or already ongoing
-        .where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(
-            now.subtract(const Duration(hours: 2)),
-          ),
-        )
-        .orderBy('startTime');
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Events near Wembley')),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: query.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+      backgroundColor: const Color(0xFFF8F9FF),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // Premium Header
+          SliverAppBar(
+            expandedHeight: 260,
+            pinned: true,
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            flexibleSpace: FlexibleSpaceBar(background: _buildModernHeader()),
+          ),
 
-          final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return const Center(
-              child: Text('No events added yet for Wembley.'),
-            );
-          }
+          // Filter & Search Section
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _buildSearchBar(),
+                const SizedBox(height: 16),
+                _buildCategoryChips(),
+              ]),
+            ),
+          ),
 
-          final now = DateTime.now();
+          // Events List
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+            sliver: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _eventsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return SliverToBoxAdapter(child: _buildLoadingState());
+                }
 
-          final events = docs.map((doc) {
-            final data = doc.data();
-            final start = (data['startTime'] as Timestamp).toDate();
-            final end = (data['endTime'] as Timestamp).toDate();
-            return _EventItem(
-              id: doc.id,
-              name: data['name'] ?? '',
-              venue: data['venueName'] ?? data['venueAddress'] ?? '',
-              address: data['address'] ?? data['venueAddress'] ?? '',
-              startTime: start,
-              endTime: end,
-              city: data['city'] ?? '',
-            );
-          }).toList();
+                if (snapshot.hasError) {
+                  return SliverToBoxAdapter(
+                    child: _buildErrorState(snapshot.error),
+                  );
+                }
 
-          final current = events.where((e) {
-            return e.startTime.isBefore(now) && e.endTime.isAfter(now);
-          }).toList();
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return SliverToBoxAdapter(child: _buildEmptyState());
+                }
 
-          final upcoming = events.where((e) {
-            return e.startTime.isAfter(now);
-          }).toList();
+                final events = docs.map((doc) {
+                  final data = doc.data();
+                  return _EventItem(
+                    id: data['id']?.toString() ?? doc.id,
+                    name: data['name'] as String? ?? 'Unnamed event',
+                    venueName: data['venueName'] as String? ?? 'Venue TBA',
+                    city: data['city'] as String? ?? 'London',
+                    addressLine1: data['addressLine1'] as String? ?? '',
+                    addressLine2: data['addressLine2'] as String?,
+                    postalCode: data['postalCode'] as String? ?? '',
+                    startDateTime: data['startDateTime'] as Timestamp?,
+                    timezone: data['timezone'] as String? ?? 'Europe/London',
+                    imageUrl:
+                        data['imageUrl'] as String? ??
+                        data['thumbnailUrl'] as String?,
+                    url: data['url'] as String?,
+                    isFamilyEvent: (data['isFamilyEvent'] as bool?) ?? false,
+                    source: data['source'] as String? ?? 'Ticketmaster',
+                  );
+                }).toList();
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (current.isNotEmpty) ...[
-                const Text(
-                  'Currently Happening',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                ...current.map((e) => _EventCard(event: e)),
-                const SizedBox(height: 24),
-              ],
-              const Text(
-                'Upcoming Events',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: FadeTransition(
+                        opacity: Tween<double>(begin: 0, end: 1).animate(
+                          CurvedAnimation(
+                            parent: _fadeController,
+                            curve: Interval(
+                              (index * 0.1).clamp(0, 1),
+                              ((index + 1) * 0.1).clamp(0, 1),
+                            ),
+                          ),
+                        ),
+                        child: SlideTransition(
+                          position:
+                              Tween<Offset>(
+                                begin: const Offset(0, 0.3),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: _fadeController,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              ),
+                          child: _EventCard(event: events[index]),
+                        ),
+                      ),
+                    );
+                  }, childCount: events.length),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernHeader() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF667EEA), Color(0xFF764BA2), Color(0xFF8B5CF6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Animated background circles
+          Positioned(
+            right: -50,
+            top: -50,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 12),
-              if (upcoming.isEmpty)
-                const Text(
-                  'No upcoming events yet.',
-                  style: TextStyle(color: Colors.grey),
+            ),
+          ),
+          Positioned(
+            left: -80,
+            bottom: -40,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.event_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Wembley Events',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Discover amazing events near you',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF667EEA).withOpacity(0.15),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: TextField(
+        onChanged: (value) => setState(() => _searchQuery = value),
+        decoration: InputDecoration(
+          hintText: 'Search events...',
+          hintStyle: TextStyle(color: Colors.grey.shade400),
+          border: InputBorder.none,
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            child: Icon(
+              Icons.search_rounded,
+              color: Colors.grey.shade400,
+              size: 24,
+            ),
+          ),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    color: Colors.grey.shade400,
+                    onPressed: () => setState(() => _searchQuery = ''),
+                  ),
                 )
-              else
-                ...upcoming.map((e) => _EventCard(event: e)),
-            ],
+              : null,
+          contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: List.generate(categories.length, (index) {
+          final category = categories[index];
+          final isSelected = _selectedCategory == category;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              right: index == categories.length - 1 ? 0 : 8,
+            ),
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedCategory = category),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? const LinearGradient(
+                          colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                        )
+                      : null,
+                  color: isSelected ? null : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: isSelected
+                      ? null
+                      : Border.all(color: Colors.grey.shade200, width: 1.5),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF667EEA).withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  category,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? Colors.white : Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ),
           );
-        },
+        }),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 80),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF667EEA).withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667EEA)),
+              strokeWidth: 3,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Loading amazing events...',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(Object? error) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 80),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: Colors.red.shade400,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Unable to load events',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please check your connection and try again',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 80),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+              ),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: const Icon(
+              Icons.event_available_rounded,
+              size: 48,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'No events found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Check back later for upcoming Wembley events',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -102,476 +481,573 @@ class EventsListScreen extends StatelessWidget {
 class _EventItem {
   final String id;
   final String name;
-  final String venue;
-  final String address;
-  final DateTime startTime;
-  final DateTime endTime;
+  final String venueName;
   final String city;
+  final String addressLine1;
+  final String? addressLine2;
+  final String postalCode;
+  final Timestamp? startDateTime;
+  final String timezone;
+  final String? imageUrl;
+  final String? url;
+  final bool isFamilyEvent;
+  final String source;
 
   _EventItem({
     required this.id,
     required this.name,
-    required this.venue,
-    required this.address,
-    required this.startTime,
-    required this.endTime,
+    required this.venueName,
     required this.city,
+    required this.addressLine1,
+    required this.addressLine2,
+    required this.postalCode,
+    required this.startDateTime,
+    required this.timezone,
+    required this.imageUrl,
+    required this.url,
+    required this.isFamilyEvent,
+    required this.source,
   });
 }
 
-class _EventCard extends StatelessWidget {
+class _EventCard extends StatefulWidget {
   final _EventItem event;
 
   const _EventCard({required this.event});
 
-  String _formatTimeRange(DateTime start, DateTime end) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final s = '${two(start.hour)}:${two(start.minute)}';
-    final e = '${two(end.hour)}:${two(end.minute)}';
-    final date = '${two(start.day)}/${two(start.month)}/${start.year}';
-    return '$date  •  $s - $e';
-  }
+  @override
+  State<_EventCard> createState() => _EventCardState();
+}
+
+class _EventCardState extends State<_EventCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _hoverController;
+  bool _isSaved = false;
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        title: Text(
-          event.name,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(event.venue, style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 2),
-            Text(
-              _formatTimeRange(event.startTime, event.endTime),
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () {
-          // later: open event details / map
-        },
-      ),
+  void initState() {
+    super.initState();
+    _hoverController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
     );
   }
-}
-
-/// ========================================
-/// ORGANIZER APPLICATION (Become organizer)
-/// ========================================
-class OrganizerApplicationScreen extends StatefulWidget {
-  const OrganizerApplicationScreen({super.key});
-
-  @override
-  State<OrganizerApplicationScreen> createState() =>
-      _OrganizerApplicationScreenState();
-}
-
-class _OrganizerApplicationScreenState
-    extends State<OrganizerApplicationScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
-  final _dobController = TextEditingController();
-  final _idTypeController = TextEditingController();
-  final _idNumberController = TextEditingController();
-
-  DateTime? _selectedDob;
-  bool _isSubmitting = false;
 
   @override
   void dispose() {
-    _fullNameController.dispose();
-    _dobController.dispose();
-    _idTypeController.dispose();
-    _idNumberController.dispose();
+    _hoverController.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDob() async {
-    final now = DateTime.now();
-    final initial = DateTime(now.year - 25, now.month, now.day);
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDob ?? initial,
-      firstDate: DateTime(1950),
-      lastDate: DateTime(now.year - 18, now.month, now.day),
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedDob = picked;
-        _dobController.text =
-            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
-      });
-    }
+  String _formatDateTime(Timestamp? ts, String timezone) {
+    if (ts == null) return 'Date / time TBA';
+    final dt = ts.toDate();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final date = '${two(dt.day)}/${two(dt.month)}/${dt.year}';
+    final time = '${two(dt.hour)}:${two(dt.minute)}';
+    return '$date  •  $time';
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+  String _buildAddress() {
+    final parts = <String>[
+      widget.event.addressLine1,
+      if ((widget.event.addressLine2 ?? '').trim().isNotEmpty)
+        widget.event.addressLine2!.trim(),
+      widget.event.city,
+      widget.event.postalCode,
+    ].where((p) => p.trim().isNotEmpty).toList();
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      final firestore = FirebaseFirestore.instance;
-
-      await firestore.collection('organizer_requests').doc(user.uid).set({
-        'userId': user.uid,
-        'email': user.email,
-        'fullName': _fullNameController.text.trim(),
-        'dob': _dobController.text.trim(),
-        'idType': _idTypeController.text.trim(),
-        'idNumber': _idNumberController.text.trim(),
-        // TODO: attach a file upload URL here later using Firebase Storage
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // mark status on user document
-      await firestore.collection('users').doc(user.uid).set({
-        'organizerStatus': 'pending',
-        'isOrganizer': false,
-      }, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Processing your request, we will review and confirm your role.',
-          ),
-        ),
-      );
-
-      Navigator.of(context).pop(); // back to profile
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to submit request: $e')));
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
+    return parts.isEmpty ? 'Wembley, London' : parts.join(', ');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Become an Organizer')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const Text(
-                'Provide your details to become an event organizer for Wembley events. '
-                'We will manually review and verify your application.',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _fullNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _dobController,
-                readOnly: true,
-                onTap: _pickDob,
-                decoration: const InputDecoration(
-                  labelText: 'Date of Birth',
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.cake_outlined),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Please select DOB' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _idTypeController,
-                decoration: const InputDecoration(
-                  labelText: 'ID Type (e.g. Passport, Driving Licence)',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _idNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'ID Number',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
+    return MouseRegion(
+      onEnter: (_) => _hoverController.forward(),
+      onExit: (_) => _hoverController.reverse(),
+      child: GestureDetector(
+        onTap: () {
+          showEventDetails(context, widget.event);
+        },
+        child: AnimatedBuilder(
+          animation: _hoverController,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(0, -_hoverController.value * 4),
+              child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.blueGrey.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'ID proof upload will be added later. For now we store your ID type and number safely in Firestore.',
-                        style: TextStyle(fontSize: 12),
-                      ),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(
+                        0xFF667EEA,
+                      ).withOpacity(0.1 + (_hoverController.value * 0.15)),
+                      blurRadius: 20 + (_hoverController.value * 10),
+                      offset: Offset(0, 8 + (_hoverController.value * 4)),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Submit Application'),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Image Section
+                      Stack(
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child:
+                                widget.event.imageUrl == null ||
+                                    widget.event.imageUrl!.isEmpty
+                                ? Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.grey.shade200,
+                                          Colors.grey.shade100,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.image_not_supported_rounded,
+                                        size: 56,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                  )
+                                : Image.network(
+                                    widget.event.imageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.grey.shade200,
+                                            Colors.grey.shade100,
+                                          ],
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.image_not_supported_rounded,
+                                          size: 56,
+                                          color: Colors.grey.shade400,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                          ),
+
+                          // Gradient Overlay
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.black.withOpacity(0.3),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Save Button
+                          Positioned(
+                            top: 12,
+                            right: 12,
+                            child: GestureDetector(
+                              onTap: () => setState(() => _isSaved = !_isSaved),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: _isSaved
+                                      ? const Color(0xFFEF4444)
+                                      : Colors.white.withOpacity(0.9),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _isSaved
+                                      ? Icons.favorite_rounded
+                                      : Icons.favorite_border_rounded,
+                                  color: _isSaved
+                                      ? Colors.white
+                                      : Colors.grey.shade700,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Badge
+                          Positioned(
+                            bottom: 12,
+                            left: 12,
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.95),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.location_on_rounded,
+                                      size: 14,
+                                      color: const Color(0xFF667EEA),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Wembley',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Content Section
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title
+                            Text(
+                              widget.event.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // Venue
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on_rounded,
+                                  size: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    widget.event.venueName,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Date & Time
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time_rounded,
+                                  size: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _formatDateTime(
+                                      widget.event.startDateTime,
+                                      widget.event.timezone,
+                                    ),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Address
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.home_work_rounded,
+                                  size: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _buildAddress(),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Chips
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              child: Row(
+                                children: [
+                                  _buildChip(
+                                    label: widget.event.source,
+                                    icon: Icons.link_rounded,
+                                    color: const Color(0xFF667EEA),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  if (widget.event.isFamilyEvent)
+                                    _buildChip(
+                                      label: 'Family Friendly',
+                                      icon: Icons.family_restroom_rounded,
+                                      color: const Color(0xFFF59E0B),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
+      ),
+    );
+  }
+
+  Widget _buildChip({
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// ==============================
-/// CREATE EVENT (for organizers)
-/// ==============================
-class CreateEventScreen extends StatefulWidget {
-  const CreateEventScreen({super.key});
-
-  @override
-  State<CreateEventScreen> createState() => _CreateEventScreenState();
+/// Event Details Bottom Sheet
+void showEventDetails(BuildContext context, _EventItem event) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => _EventDetailsSheet(event: event),
+  );
 }
 
-class _CreateEventScreenState extends State<CreateEventScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _venueNameController = TextEditingController();
-  final _addressController = TextEditingController();
+class _EventDetailsSheet extends StatelessWidget {
+  final _EventItem event;
 
-  DateTime? _startTime;
-  DateTime? _endTime;
-  bool _isSubmitting = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _venueNameController.dispose();
-    _addressController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickStart() async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
-    if (date == null) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 19, minute: 0),
-    );
-    if (time == null) return;
-
-    setState(() {
-      _startTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-    });
-  }
-
-  Future<void> _pickEnd() async {
-    final base = _startTime ?? DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: base,
-      firstDate: base,
-      lastDate: base.add(const Duration(days: 3)),
-    );
-    if (date == null) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 22, minute: 0),
-    );
-    if (time == null) return;
-
-    setState(() {
-      _endTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-    });
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_startTime == null || _endTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select start and end time')),
-      );
-      return;
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      await FirebaseFirestore.instance.collection('events').add({
-        'name': _nameController.text.trim(),
-        'venueName': _venueNameController.text.trim(),
-        'address': _addressController.text.trim(),
-        'city': 'Wembley',
-        'startTime': Timestamp.fromDate(_startTime!),
-        'endTime': Timestamp.fromDate(_endTime!),
-        'createdBy': user.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event created successfully')),
-      );
-      Navigator.of(context).pop(); // back to profile
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to create event: $e')));
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  String _formatDateTime(DateTime? dt) {
-    if (dt == null) return 'Select';
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(dt.day)}/${two(dt.month)}/${dt.year}  ${two(dt.hour)}:${two(dt.minute)}';
-  }
+  const _EventDetailsSheet({required this.event});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create Event (Wembley)')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      maxChildSize: 0.9,
+      minChildSize: 0.5,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 24),
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Content
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.name,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _detailRow(
+                        icon: Icons.location_on_rounded,
+                        title: 'Venue',
+                        content: event.venueName,
+                      ),
+                      const SizedBox(height: 16),
+                      _detailRow(
+                        icon: Icons.access_time_rounded,
+                        title: 'Date & Time',
+                        content: event.startDateTime != null
+                            ? '${event.startDateTime!.toDate()}'
+                            : 'TBA',
+                      ),
+                      const SizedBox(height: 16),
+                      _detailRow(
+                        icon: Icons.home_work_rounded,
+                        title: 'Address',
+                        content: '${event.addressLine1}, ${event.city}',
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          label: const Text('View on Ticketmaster'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF667EEA),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow({
+    required IconData icon,
+    required String title,
+    required String content,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF667EEA).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, size: 20, color: const Color(0xFF667EEA)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Event Name',
-                  border: OutlineInputBorder(),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade500,
                 ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _venueNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Venue Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _addressController,
-                decoration: const InputDecoration(
-                  labelText: 'Venue Address',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Start Time'),
-                subtitle: Text(_formatDateTime(_startTime)),
-                trailing: const Icon(Icons.access_time),
-                onTap: _pickStart,
-              ),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('End Time'),
-                subtitle: Text(_formatDateTime(_endTime)),
-                trailing: const Icon(Icons.access_time),
-                onTap: _pickEnd,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  icon: const Icon(Icons.check_rounded),
-                  label: _isSubmitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create Event'),
+              const SizedBox(height: 4),
+              Text(
+                content,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
                 ),
               ),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
