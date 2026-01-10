@@ -1,9 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'dart:ui';
 
 enum EmailAuthMode { login, register }
 
@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen>
       'photoUrl': user.photoURL,
       'provider': providerId,
 
-      // 👉 NEW: event app specific fields
+      // event app specific fields
       'role': 'user',
       'organizerStatus': 'none', // none | pending | approved | rejected
       'isOrganizer': false,
@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen>
       'savedParkingCount': 0,
       'bookingsCount': 0,
 
-      // existing extra fields
+      // extra profile fields
       'firstName': extraFields['firstName'],
       'lastName': extraFields['lastName'],
       'dob': extraFields['dob'],
@@ -127,34 +127,29 @@ class _LoginScreenState extends State<LoginScreen>
     }, SetOptions(merge: true));
   }
 
+  // ---------------------------------------------------------------------------
+  // GOOGLE SIGN-IN
+  // ---------------------------------------------------------------------------
   Future<void> _signInWithGoogle(BuildContext context) async {
     setState(() => _isLoading = true);
 
     try {
+      // Configure Google provider
+      final googleProvider = GoogleAuthProvider()
+        ..setCustomParameters({'prompt': 'select_account'})
+        ..addScope('email');
+
       UserCredential userCredential;
 
       if (kIsWeb) {
-        final googleProvider = GoogleAuthProvider();
+        // Web: use popup
         userCredential = await FirebaseAuth.instance.signInWithPopup(
           googleProvider,
         );
       } else {
-        // NOTE: If you used this before and it works, keep it.
-        // If you get an error, replace `authenticate()` with `signIn()`.
-        final GoogleSignInAccount googleUser = await GoogleSignIn.instance
-            .authenticate();
-
-        if (googleUser == null) {
-          setState(() => _isLoading = false);
-          return;
-        }
-
-        final googleAuth = googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          idToken: googleAuth.idToken,
-        );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
+        // Mobile / desktop: use signInWithProvider (no GoogleSignIn plugin needed)
+        userCredential = await FirebaseAuth.instance.signInWithProvider(
+          googleProvider,
         );
       }
 
@@ -162,6 +157,8 @@ class _LoginScreenState extends State<LoginScreen>
       if (user != null) {
         await _writeUserDocument(user, 'google', {});
       }
+    } on FirebaseAuthException catch (e) {
+      _showError(e.message ?? 'Google sign-in failed');
     } catch (e) {
       _showError('Google sign-in failed: $e');
     } finally {
@@ -169,6 +166,9 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // EMAIL REGISTER
+  // ---------------------------------------------------------------------------
   Future<void> _registerWithEmail(BuildContext context) async {
     if (!_registerFormKey.currentState!.validate()) return;
 
@@ -196,22 +196,28 @@ class _LoginScreenState extends State<LoginScreen>
           'dob': dob,
         });
 
-        await user.sendEmailVerification();
-        await FirebaseAuth.instance.signOut();
+        // Send verification email once; user stays logged in
+        try {
+          await user.sendEmailVerification();
+        } catch (_) {
+          // non-fatal
+        }
 
         if (!mounted) return;
 
-        setState(() {
-          _emailMode = EmailAuthMode.login;
-          _loginEmailController.text = email;
-          _loginPasswordController.clear();
-        });
-
-        await showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => _buildVerificationDialog(email),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Verification link sent to $email. Please verify from your inbox.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
         );
+        // AuthGate will now detect logged-in user and take them to HomeScreen.
       }
     } on FirebaseAuthException catch (e) {
       final msg = e.message ?? 'Registration failed';
@@ -223,6 +229,9 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // EMAIL LOGIN
+  // ---------------------------------------------------------------------------
   Future<void> _loginWithEmail(BuildContext context) async {
     if (!_loginFormKey.currentState!.validate()) return;
 
@@ -232,26 +241,12 @@ class _LoginScreenState extends State<LoginScreen>
       final email = _loginEmailController.text.trim();
       final password = _loginPasswordController.text.trim();
 
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      final user = cred.user;
-      if (user != null) {
-        await user.reload();
-        final refreshed = FirebaseAuth.instance.currentUser;
-
-        if (refreshed != null &&
-            !refreshed.emailVerified &&
-            refreshed.providerData.any((p) => p.providerId == 'password')) {
-          await FirebaseAuth.instance.signOut();
-          _showError(
-            'Please verify your email before logging in.\nWe have sent a verification link to $email.',
-          );
-          return;
-        }
-      }
+      // No emailVerified check here – HomeScreen will block features
+      // until the email is actually verified.
     } on FirebaseAuthException catch (e) {
       String msg;
       if (e.code == 'user-not-found') {
@@ -288,6 +283,270 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // FORGOT PASSWORD DIALOG
+  // ---------------------------------------------------------------------------
+  // ⭐ Fixed: Forgot Password Dialog – no manual dispose, safe contexts
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController();
+    bool isSending = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.lock_reset_rounded,
+                        size: 48,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Reset Password',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Enter your email address and we\'ll send you a link to reset your password.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.95),
+                        height: 1.6,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Email Address',
+                          labelStyle: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 14,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.email_outlined,
+                            color: Colors.white.withOpacity(0.8),
+                            size: 22,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSending
+                                ? null
+                                : () => Navigator.of(dialogContext).pop(),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: Colors.white.withOpacity(0.2),
+                            ),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: isSending
+                                ? null
+                                : () async {
+                                    final email = emailController.text.trim();
+                                    if (email.isEmpty || !email.contains('@')) {
+                                      ScaffoldMessenger.of(
+                                        dialogContext,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                            'Please enter a valid email address',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    setDialogState(() => isSending = true);
+
+                                    try {
+                                      await FirebaseAuth.instance
+                                          .sendPasswordResetEmail(email: email);
+
+                                      if (!dialogContext.mounted) return;
+
+                                      Navigator.of(dialogContext).pop();
+
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.check_circle_outline,
+                                                color: Colors.white,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  'Password reset link sent to $email',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          backgroundColor: const Color(
+                                            0xFF10B981,
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          margin: const EdgeInsets.all(16),
+                                        ),
+                                      );
+                                    } on FirebaseAuthException catch (e) {
+                                      if (!dialogContext.mounted) return;
+
+                                      ScaffoldMessenger.of(
+                                        dialogContext,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            e.message ??
+                                                'Failed to send reset email',
+                                          ),
+                                          backgroundColor: const Color(
+                                            0xFFFF6B6B,
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    } finally {
+                                      if (dialogContext.mounted) {
+                                        setDialogState(() => isSending = false);
+                                      }
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF667EEA),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: isSending
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                  )
+                                : const Text(
+                                    'Send Link',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    // NOTE: no emailController.dispose() here – let the dialog clean up safely.
+  }
+
+  // ---------------------------------------------------------------------------
+  // DOB PICKER
+  // ---------------------------------------------------------------------------
   Future<void> _pickDob() async {
     final now = DateTime.now();
     final initial = DateTime(now.year - 18, now.month, now.day);
@@ -322,6 +581,9 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // BUILD
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -774,7 +1036,22 @@ class _LoginScreenState extends State<LoginScreen>
               return null;
             },
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _showForgotPasswordDialog,
+              child: Text(
+                'Forgot Password?',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.95),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _buildModernActionButton(
             label: 'Sign In',
             onPressed: () => _loginWithEmail(context),
@@ -1081,6 +1358,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // Optional: old verification dialog (not used now; dashboard popup handles it)
   Widget _buildVerificationDialog(String email) {
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
@@ -1122,7 +1400,7 @@ class _LoginScreenState extends State<LoginScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                'We\'ve sent a verification link to:\n\n$email\n\nPlease check your inbox and click the link to verify your account.',
+                'We\'ve sent a verification link to:\n\n$email\n\nPlease check your inbox (and spam/junk folder) and click the link to verify your account.',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.white.withOpacity(0.95),

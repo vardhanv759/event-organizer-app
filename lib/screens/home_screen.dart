@@ -9,6 +9,7 @@ import 'organize_event_sheet.dart';
 import 'organizer_application_sheet.dart';
 import 'manage_events_screen.dart';
 import 'map_screen.dart';
+import 'dining_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +22,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedIndex = 0;
   late AnimationController _fabController;
   late AnimationController _cardController;
+  bool _isCheckingEmailVerification = false;
+  bool _isResendingVerification = false;
 
   @override
   void initState() {
@@ -64,6 +67,194 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
       await FirebaseAuth.instance.signOut();
     }
+  }
+
+  Future<void> _checkEmailVerified() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _isCheckingEmailVerification = true);
+    try {
+      await user.reload();
+      final refreshed = FirebaseAuth.instance.currentUser;
+      final verified = refreshed?.emailVerified ?? false;
+
+      if (!mounted) return;
+
+      if (verified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email verified successfully. Enjoy all features!'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'We still can’t see the verification. Please click the link in your email, then tap "I\'ve verified my email" again.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to check verification: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingEmailVerification = false);
+      }
+    }
+  }
+
+  Future<void> _resendVerificationEmail() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _isResendingVerification = true);
+    try {
+      await user.sendEmailVerification();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Verification link re-sent to ${user.email}. Please also check spam/junk folders.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send verification email: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isResendingVerification = false);
+      }
+    }
+  }
+
+  Widget _buildEmailVerificationOverlay(String? email) {
+    final emailText = email ?? 'your email address';
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.55),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 30,
+                  offset: const Offset(0, 16),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.mark_email_unread_rounded,
+                    size: 36,
+                    color: Color(0xFF6366F1),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Verify your email',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We’ve sent a verification link to:\n$emailText\n\nPlease verify your email to unlock all features.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade700,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tip: also check your spam/junk folder.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isCheckingEmailVerification
+                        ? null
+                        : _checkEmailVerified,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _isCheckingEmailVerification
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'I’ve verified my email',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _isResendingVerification
+                      ? null
+                      : _resendVerificationEmail,
+                  child: _isResendingVerification
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Resend verification link',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _handleOrganizeEvent(
@@ -239,14 +430,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           body = _buildBodyForTab(context, _selectedIndex, data);
         }
 
-        return Scaffold(
-          backgroundColor: const Color(0xFFF8F9FF),
-          body: body,
-          bottomNavigationBar: _buildModernBottomNav(),
-          floatingActionButton: (data != null && _selectedIndex == 0)
-              ? _buildFloatingActionButton(data, organizerStatus)
-              : null,
-          floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
+        final isPasswordUser = authUser.providerData.any(
+          (p) => p.providerId == 'password',
+        );
+        final needsVerificationGate =
+            isPasswordUser && !(authUser.emailVerified);
+
+        return Stack(
+          children: [
+            Scaffold(
+              backgroundColor: const Color(0xFFF8F9FF),
+              body: body,
+              bottomNavigationBar: _buildModernBottomNav(),
+              floatingActionButton: (data != null && _selectedIndex == 0)
+                  ? _buildFloatingActionButton(data, organizerStatus)
+                  : null,
+              floatingActionButtonLocation:
+                  FloatingActionButtonLocation.endDocked,
+            ),
+            if (needsVerificationGate)
+              _buildEmailVerificationOverlay(authUser.email),
+          ],
         );
       },
     );
@@ -545,8 +749,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _buildModernNavItem(0, Icons.explore_rounded, 'Explore'),
               _buildModernNavItem(1, Icons.event_rounded, 'Events'),
               _buildModernNavItem(2, Icons.local_parking_rounded, 'Parking'),
-              _buildModernNavItem(3, Icons.map_rounded, 'Map'),
-              _buildModernNavItem(4, Icons.person_rounded, 'Profile'),
+              _buildModernNavItem(3, Icons.restaurant_rounded, 'Dining'),
+              _buildModernNavItem(4, Icons.map_rounded, 'Map'),
+              _buildModernNavItem(5, Icons.person_rounded, 'Profile'),
             ],
           ),
         ),
@@ -636,8 +841,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         );
       case 3:
-        return const MapScreen();
+        return const AdvancedDiningScreen();
       case 4:
+        return const MapScreen();
+      case 5:
         return _ProfileTab(
           userData: userData,
           onLogout: _logout,

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:ui';
 
 /// ===============================
@@ -50,13 +51,11 @@ class _EventsListScreenState extends State<EventsListScreen>
       DateTime.now().add(const Duration(days: 365)),
     );
 
-    var query =
-        FirebaseFirestore.instance
-                .collection('events_wembley')
-                .where('startDateTime', isGreaterThanOrEqualTo: now)
-                .where('startDateTime', isLessThanOrEqualTo: oneYearLater)
-                .orderBy('startDateTime')
-            as Query<Map<String, dynamic>>;
+    var query = FirebaseFirestore.instance
+        .collection('events_wembley')
+        .where('startDateTime', isGreaterThanOrEqualTo: now)
+        .where('startDateTime', isLessThanOrEqualTo: oneYearLater)
+        .orderBy('startDateTime');
 
     return query.snapshots();
   }
@@ -114,7 +113,7 @@ class _EventsListScreenState extends State<EventsListScreen>
                   final data = doc.data();
                   return _EventItem(
                     id: data['id']?.toString() ?? doc.id,
-                    name: data['name'] as String? ?? 'Unnamed event',
+                    name: data['title'] as String? ?? 'Unnamed event',
                     venueName: data['venueName'] as String? ?? 'Venue TBA',
                     city: data['city'] as String? ?? 'London',
                     addressLine1: data['addressLine1'] as String? ?? '',
@@ -127,7 +126,8 @@ class _EventsListScreenState extends State<EventsListScreen>
                         data['thumbnailUrl'] as String?,
                     url: data['url'] as String?,
                     isFamilyEvent: (data['isFamilyEvent'] as bool?) ?? false,
-                    source: data['source'] as String? ?? 'Ticketmaster',
+                    source: (data['source'] as String? ?? 'Ticketmaster')
+                        .trim(),
                   );
                 }).toList();
 
@@ -613,7 +613,7 @@ class _EventCardState extends State<_EventCard>
                                     child: Center(
                                       child: Icon(
                                         Icons.image_not_supported_rounded,
-                                        size: 56,
+                                        size: 48,
                                         color: Colors.grey.shade400,
                                       ),
                                     ),
@@ -621,6 +621,8 @@ class _EventCardState extends State<_EventCard>
                                 : Image.network(
                                     widget.event.imageUrl!,
                                     fit: BoxFit.cover,
+                                    filterQuality: FilterQuality
+                                        .high, // Better image quality
                                     errorBuilder: (_, __, ___) => Container(
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
@@ -633,7 +635,7 @@ class _EventCardState extends State<_EventCard>
                                       child: Center(
                                         child: Icon(
                                           Icons.image_not_supported_rounded,
-                                          size: 56,
+                                          size: 48,
                                           color: Colors.grey.shade400,
                                         ),
                                       ),
@@ -692,7 +694,7 @@ class _EventCardState extends State<_EventCard>
                             ),
                           ),
 
-                          // Badge
+                          // Badge - FIX #1: Smaller icon
                           Positioned(
                             bottom: 12,
                             left: 12,
@@ -712,7 +714,7 @@ class _EventCardState extends State<_EventCard>
                                   children: [
                                     Icon(
                                       Icons.location_on_rounded,
-                                      size: 14,
+                                      size: 13, // FIX: Reduced from 14 to 13
                                       color: const Color(0xFF667EEA),
                                     ),
                                     const SizedBox(width: 4),
@@ -732,9 +734,9 @@ class _EventCardState extends State<_EventCard>
                         ],
                       ),
 
-                      // Content Section
+                      // Content Section - Reduced padding for better image visibility
                       Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -750,14 +752,14 @@ class _EventCardState extends State<_EventCard>
                                 letterSpacing: -0.3,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
 
-                            // Venue
+                            // Venue - MEDIUM sized icon (13px)
                             Row(
                               children: [
                                 Icon(
                                   Icons.location_on_rounded,
-                                  size: 16,
+                                  size: 13, // Medium icon size
                                   color: Colors.grey.shade500,
                                 ),
                                 const SizedBox(width: 6),
@@ -773,14 +775,14 @@ class _EventCardState extends State<_EventCard>
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
 
-                            // Date & Time
+                            // Date & Time - MEDIUM sized icon (13px)
                             Row(
                               children: [
                                 Icon(
                                   Icons.access_time_rounded,
-                                  size: 16,
+                                  size: 13, // Medium icon size
                                   color: Colors.grey.shade500,
                                 ),
                                 const SizedBox(width: 6),
@@ -799,15 +801,15 @@ class _EventCardState extends State<_EventCard>
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
 
-                            // Address
+                            // Address - MEDIUM sized icon (13px)
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.home_work_rounded,
-                                  size: 16,
+                                  size: 13, // Medium icon size
                                   color: Colors.grey.shade500,
                                 ),
                                 const SizedBox(width: 6),
@@ -825,7 +827,7 @@ class _EventCardState extends State<_EventCard>
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 14),
 
                             // Chips
                             SingleChildScrollView(
@@ -877,7 +879,7 @@ class _EventCardState extends State<_EventCard>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: color),
+          Icon(icon, size: 13, color: color), // FIX #1: Reduced from default
           const SizedBox(width: 4),
           Text(
             label,
@@ -907,6 +909,25 @@ class _EventDetailsSheet extends StatelessWidget {
   final _EventItem event;
 
   const _EventDetailsSheet({required this.event});
+
+  // FIX #2: Open URL properly
+  Future<void> _launchUrl(String? url) async {
+    if (url == null || url.isEmpty) {
+      print('❌ No URL available');
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        print('❌ Could not launch URL: $url');
+      }
+    } catch (e) {
+      print('❌ Error launching URL: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -957,6 +978,8 @@ class _EventDetailsSheet extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 20),
+
+                      // FIX #1: Reduced icon size in detail rows
                       _detailRow(
                         icon: Icons.location_on_rounded,
                         title: 'Venue',
@@ -977,20 +1000,30 @@ class _EventDetailsSheet extends StatelessWidget {
                         content: '${event.addressLine1}, ${event.city}',
                       ),
                       const SizedBox(height: 24),
+
+                      // FIX #2 & #3: Dynamic button with working URL and source detection
                       SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton.icon(
                           onPressed: () {
-                            Navigator.pop(context);
+                            _launchUrl(event.url);
                           },
                           icon: const Icon(Icons.open_in_new_rounded),
-                          label: const Text('View on Ticketmaster'),
+                          label: Text(
+                            'View on ${event.source}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF667EEA),
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
+                            elevation: 0,
                           ),
                         ),
                       ),
@@ -1020,7 +1053,11 @@ class _EventDetailsSheet extends StatelessWidget {
             color: const Color(0xFF667EEA).withOpacity(0.12),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, size: 20, color: const Color(0xFF667EEA)),
+          child: Icon(
+            icon,
+            size: 16, // Medium icon size (was 20)
+            color: const Color(0xFF667EEA),
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
