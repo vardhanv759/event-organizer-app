@@ -9,16 +9,20 @@ import 'free_parking_screen.dart';
 /// This file keeps the name MapScreen to avoid breaking your existing navigation.
 /// Functionally, it is now the "Parking Hub" screen.
 class MapScreen extends StatelessWidget {
-  const MapScreen({super.key});
+  final Map<String, dynamic> userData;
+
+  const MapScreen({super.key, required this.userData});
 
   @override
   Widget build(BuildContext context) {
-    return const ParkingHubScreen();
+    return ParkingHubScreen(userData: userData);
   }
 }
 
 class ParkingHubScreen extends StatelessWidget {
-  const ParkingHubScreen({super.key});
+  final Map<String, dynamic> userData;
+
+  const ParkingHubScreen({super.key, required this.userData});
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +96,8 @@ class ParkingHubScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const PrivateParkingScreen(),
+                        builder: (_) =>
+                            PrivateParkingScreen(userData: userData),
                       ),
                     );
                   },

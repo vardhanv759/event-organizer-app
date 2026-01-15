@@ -9,10 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'events_screen.dart';
 import 'dining_screen.dart';
-import 'map_screen.dart';
-import 'manage_events_screen.dart';
-import 'organize_event_sheet.dart';
-import 'organizer_application_sheet.dart';
+import 'parking_hub_screen.dart' as hub;
 
 import 'offers_screen.dart';
 import 'ai_planner_screen.dart';
@@ -485,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       case 1:
         return const EventsListScreen();
       case 2:
-        return const MapScreen();
+        return hub.ParkingHubScreen(userData: userData);
       case 3:
         return const AdvancedDiningScreen();
       case 4:
@@ -495,17 +492,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildProfileEndDrawer(
-    Map<String, dynamic> userData,
-    String organizerStatus,
-  ) {
+  Widget _buildProfileEndDrawer(Map<String, dynamic> userData) {
     final name = (userData['name'] as String?)?.trim();
     final email = (userData['email'] as String?)?.trim();
     final photoUrl = (userData['photoUrl'] as String?)?.trim();
 
     final safeName = (name == null || name.isEmpty) ? 'Guest' : name;
     final safeEmail = email ?? '';
-    final canOrganize = organizerStatus == 'approved';
 
     return Drawer(
       shape: const RoundedRectangleBorder(
@@ -644,48 +637,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       );
                     },
                   ),
-
-                  const SizedBox(height: 8),
-                  const _DrawerDividerLabel(label: 'Organizer'),
-
-                  if (canOrganize) ...[
-                    _DrawerTile(
-                      icon: Icons.add_business_rounded,
-                      title: 'Organize an Event',
-                      onTap: () {
-                        Navigator.pop(context);
-                        showOrganizeEventSheet(context, userData: userData);
-                      },
-                    ),
-                    _DrawerTile(
-                      icon: Icons.manage_accounts_rounded,
-                      title: 'Manage My Events',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ManageEventsScreen(userData: userData),
-                          ),
-                        );
-                      },
-                    ),
-                  ] else ...[
-                    _DrawerTile(
-                      icon: Icons.verified_user_rounded,
-                      title: 'Become an Organizer',
-                      subtitle: 'Apply to host and publish events',
-                      onTap: () {
-                        Navigator.pop(context);
-                        showOrganizerApplicationSheet(
-                          context,
-                          userData: userData,
-                        );
-                      },
-                    ),
-                  ],
-
                   const SizedBox(height: 8),
                   const _DrawerDividerLabel(label: 'Support'),
                   _DrawerTile(
@@ -798,7 +749,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       builder: (context, snapshot) {
         Widget body;
         Map<String, dynamic>? data;
-        String organizerStatus = 'none';
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           body = _buildLoadingState();
@@ -806,7 +756,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           body = const Center(child: Text('User profile not found.'));
         } else {
           data = snapshot.data!.data()!;
-          organizerStatus = (data['organizerStatus'] as String?) ?? 'none';
           body = _buildBodyForTab(context, _selectedIndex, data);
         }
 
@@ -823,9 +772,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               backgroundColor: const Color(0xFFF8F9FF),
               body: body,
               bottomNavigationBar: _buildPremiumBottomNav(),
-              endDrawer: (data == null)
-                  ? null
-                  : _buildProfileEndDrawer(data, organizerStatus),
+              endDrawer: (data == null) ? null : _buildProfileEndDrawer(data),
             ),
 
             // Top-right profile avatar overlay (premium)
@@ -1760,7 +1707,10 @@ class _PremiumActionGrid extends StatelessWidget {
         _ActionTile(
           label: 'Offers',
           icon: Icons.local_offer_rounded,
-          gradient: const [Color(0xFF111827), Color(0xFF334155)],
+          gradient: const [
+            Color.fromARGB(255, 205, 30, 214),
+            Color.fromARGB(255, 57, 209, 115),
+          ],
           onTap: onOffers,
           badge: 'Today',
         ),
