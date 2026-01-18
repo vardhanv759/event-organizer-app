@@ -25,16 +25,12 @@ class _PrivateParkingNearbyScreenState
     'open_lot',
   ];
 
-  Query<Map<String, dynamic>> _query() {
-    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+  Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
+    // MVP: Avoid composite indexes; filter/sort client-side.
+    return FirebaseFirestore.instance
         .collection('parking_spaces')
-        .where('status', isEqualTo: 'approved');
-
-    if (_spaceType != 'All') {
-      q = q.where('space_type', isEqualTo: _spaceType);
-    }
-
-    return q.orderBy('created_at', descending: true).limit(60);
+        .limit(200)
+        .snapshots();
   }
 
   @override
@@ -68,20 +64,48 @@ class _PrivateParkingNearbyScreenState
             const SizedBox(height: 12),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _query().snapshots(),
+                stream: _stream(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const _LoadingSkeleton();
                   }
 
                   final docs = snapshot.data?.docs ?? [];
-                  if (docs.isEmpty) {
+
+                  // Filter approved client-side (handles Approved/approved/APPROVED)
+                  final approved = docs.where((d) {
+                    final m = d.data();
+                    final status = (m['status_lower'] ?? m['status'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+                    if (status != 'approved') return false;
+
+                    if (_spaceType == 'All') return true;
+                    final t = (m['space_type'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+                    return t == _spaceType.toLowerCase();
+                  }).toList();
+
+                  // Sort newest first (client-side)
+                  approved.sort((a, b) {
+                    final ta = (a.data()['created_at'] as Timestamp?)?.toDate();
+                    final tb = (b.data()['created_at'] as Timestamp?)?.toDate();
+                    return (tb ?? DateTime.fromMillisecondsSinceEpoch(0))
+                        .compareTo(
+                          ta ?? DateTime.fromMillisecondsSinceEpoch(0),
+                        );
+                  });
+
+                  if (approved.isEmpty) {
                     return const _EmptyState();
                   }
 
                   if (_grid) {
                     return GridView.builder(
-                      itemCount: docs.length,
+                      itemCount: approved.length,
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
@@ -90,8 +114,8 @@ class _PrivateParkingNearbyScreenState
                             childAspectRatio: 0.92,
                           ),
                       itemBuilder: (context, i) {
-                        final d = docs[i];
-                        return _SpaceCard(
+                        final d = approved[i];
+                        return _SpaceCardPremium(
                           data: d.data(),
                           onTap: () {
                             Navigator.push(
@@ -108,11 +132,11 @@ class _PrivateParkingNearbyScreenState
                   }
 
                   return ListView.separated(
-                    itemCount: docs.length,
+                    itemCount: approved.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
-                      final d = docs[i];
-                      return _SpaceListTile(
+                      final d = approved[i];
+                      return _SpaceListTilePremium(
                         data: d.data(),
                         onTap: () {
                           Navigator.push(
@@ -149,24 +173,24 @@ class _TopFilterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Icon(Icons.filter_list_rounded, color: Color(0xFF334155)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 12,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.tune_rounded, color: Color(0xFF334155)),
+          const SizedBox(width: 10),
+          Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: value,
@@ -190,26 +214,26 @@ class _TopFilterRow extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _SpaceCard extends StatelessWidget {
+class _SpaceCardPremium extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
 
-  const _SpaceCard({required this.data, required this.onTap});
+  const _SpaceCardPremium({required this.data, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final title = (data['title'] as String?)?.trim() ?? 'Private parking';
     final area = (data['approx_area'] as String?)?.trim() ?? 'Wembley';
+    final type = (data['space_type'] as String?)?.trim() ?? 'space';
     final hourly = (data['hourly_rate_gbp'] is num)
         ? (data['hourly_rate_gbp'] as num).toDouble()
         : 0.0;
-    final type = (data['space_type'] as String?)?.trim() ?? 'space';
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -246,7 +270,7 @@ class _SpaceCard extends StatelessWidget {
                   child: Icon(
                     Icons.local_parking_rounded,
                     color: Colors.white,
-                    size: 36,
+                    size: 38,
                   ),
                 ),
               ),
@@ -258,13 +282,12 @@ class _SpaceCard extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF0F172A),
+                  height: 1.15,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
                 '$area • ${type.replaceAll('_', ' ')}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF64748B),
@@ -278,7 +301,7 @@ class _SpaceCard extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEEF2FF),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   '£${hourly.toStringAsFixed(2)}/hr',
@@ -296,16 +319,17 @@ class _SpaceCard extends StatelessWidget {
   }
 }
 
-class _SpaceListTile extends StatelessWidget {
+class _SpaceListTilePremium extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
 
-  const _SpaceListTile({required this.data, required this.onTap});
+  const _SpaceListTilePremium({required this.data, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final title = (data['title'] as String?)?.trim() ?? 'Private parking';
     final area = (data['approx_area'] as String?)?.trim() ?? 'Wembley';
+    final type = (data['space_type'] as String?)?.trim() ?? 'space';
     final hourly = (data['hourly_rate_gbp'] is num)
         ? (data['hourly_rate_gbp'] as num).toDouble()
         : 0.0;
@@ -332,10 +356,12 @@ class _SpaceListTile extends StatelessWidget {
               height: 54,
               width: 54,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
                 gradient: const LinearGradient(
                   colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(
                 Icons.local_parking_rounded,
@@ -351,11 +377,14 @@ class _SpaceListTile extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    area,
+                    '$area • ${type.replaceAll('_', ' ')}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF64748B),
@@ -365,16 +394,44 @@ class _SpaceListTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              '£${hourly.toStringAsFixed(2)}/hr',
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF4F46E5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '£${hourly.toStringAsFixed(2)}/hr',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF4F46E5),
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingSkeleton extends StatelessWidget {
+  const _LoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      itemCount: 6,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.92,
+      ),
+      itemBuilder: (_, __) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(18),
         ),
       ),
     );
@@ -386,14 +443,28 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'No approved private parking spaces yet.\n\nIf you are a provider, apply to list your space.',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF334155),
-          height: 1.4,
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: const Text(
+          'No approved private spaces yet.\nIf you are a provider, submit your space for review.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF334155),
+            height: 1.25,
+          ),
         ),
       ),
     );
