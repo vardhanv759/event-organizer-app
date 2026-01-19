@@ -32,35 +32,6 @@ class ParkingProviderDashboardScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      floatingActionButton:
-          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: userRef.snapshots(),
-            builder: (context, userSnap) {
-              final userData = (userSnap.data?.data() ?? <String, dynamic>{})
-                ..putIfAbsent('uid', () => uid)
-                ..putIfAbsent('email', () => user?.email ?? '');
-
-              return FloatingActionButton.extended(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ParkingSpaceRegisterScreen(userDoc: userData),
-                    ),
-                  );
-                },
-                backgroundColor: const Color(0xFFEEF2FF),
-                foregroundColor: const Color(0xFF1F2937),
-                elevation: 0,
-                label: const Text(
-                  'Add space',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                icon: const Icon(Icons.add_rounded),
-              );
-            },
-          ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
