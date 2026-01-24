@@ -362,8 +362,9 @@ class _ParkingSpaceRegisterScreenState
                         keyboardType: TextInputType.number,
                         validator: (v) {
                           final n = double.tryParse((v ?? '').trim());
-                          if (n == null || n <= 0)
+                          if (n == null || n <= 0) {
                             return 'Enter a valid hourly price';
+                          }
                           return null;
                         },
                       ),

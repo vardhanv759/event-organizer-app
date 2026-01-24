@@ -49,7 +49,7 @@ class DiningPlace {
   factory DiningPlace.fromFirestore(DocumentSnapshot doc) {
     final data = (doc.data() as Map<String, dynamic>?) ?? {};
 
-    String? _getString(List<String> keys) {
+    String? getString(List<String> keys) {
       for (final k in keys) {
         if (data.containsKey(k) && data[k] != null) {
           return data[k].toString();
@@ -58,7 +58,7 @@ class DiningPlace {
       return null;
     }
 
-    num? _getNum(List<String> keys) {
+    num? getNum(List<String> keys) {
       for (final k in keys) {
         if (data.containsKey(k) && data[k] is num) {
           return data[k] as num;
@@ -67,7 +67,7 @@ class DiningPlace {
       return null;
     }
 
-    bool? _getBool(List<String> keys) {
+    bool? getBool(List<String> keys) {
       for (final k in keys) {
         if (data.containsKey(k)) {
           final v = data[k];
@@ -83,26 +83,26 @@ class DiningPlace {
     }
 
     return DiningPlace(
-      id: _getString(['id']) ?? doc.id,
-      name: _getString(['name']) ?? 'Unknown',
-      placeId: _getString(['placeId', 'place id']),
-      source: _getString(['source']),
-      address: _getString(['address', 'formatted_address']),
-      phone: _getString(['phone', 'international_phone_number']),
-      rating: _getNum(['rating'])?.toDouble(),
-      userRatingsTotal: _getNum([
+      id: getString(['id']) ?? doc.id,
+      name: getString(['name']) ?? 'Unknown',
+      placeId: getString(['placeId', 'place id']),
+      source: getString(['source']),
+      address: getString(['address', 'formatted_address']),
+      phone: getString(['phone', 'international_phone_number']),
+      rating: getNum(['rating'])?.toDouble(),
+      userRatingsTotal: getNum([
         'userRatingsTotal',
         'user_ratings_total',
       ])?.toInt(),
-      priceLevel: _getNum(['priceLevel', 'price_level'])?.toInt(),
-      latitude: _getNum(['latitude', 'lat'])?.toDouble(),
-      longitude: _getNum(['longitude', 'lng'])?.toDouble(),
-      types: _getString(['types']),
-      cuisine: _getString(['cuisine', 'cuisineType']),
-      openNow: _getBool(['openNow', 'open_now']),
-      photoReference: _getString(['photoReference', 'photo_reference']),
-      photoUrl: _getString(['photoUrl']),
-      website: _getString(['website']),
+      priceLevel: getNum(['priceLevel', 'price_level'])?.toInt(),
+      latitude: getNum(['latitude', 'lat'])?.toDouble(),
+      longitude: getNum(['longitude', 'lng'])?.toDouble(),
+      types: getString(['types']),
+      cuisine: getString(['cuisine', 'cuisineType']),
+      openNow: getBool(['openNow', 'open_now']),
+      photoReference: getString(['photoReference', 'photo_reference']),
+      photoUrl: getString(['photoUrl']),
+      website: getString(['website']),
       photos: (data['photos'] as List?)?.cast<String>(),
     );
   }
@@ -128,7 +128,7 @@ class DiningPlace {
 }
 
 class AdvancedDiningScreen extends StatefulWidget {
-  const AdvancedDiningScreen({Key? key}) : super(key: key);
+  const AdvancedDiningScreen({super.key});
 
   @override
   State<AdvancedDiningScreen> createState() => _AdvancedDiningScreenState();
@@ -215,8 +215,9 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   double? _distanceFromUser(DiningPlace place) {
     if (_currentPosition == null ||
         place.latitude == null ||
-        place.longitude == null)
+        place.longitude == null) {
       return null;
+    }
     return Geolocator.distanceBetween(
       _currentPosition!.latitude,
       _currentPosition!.longitude,
@@ -804,14 +805,18 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   Widget _buildActiveFiltersChips() {
     final active = <String>[];
 
-    if (_selectedPriceLevel != null)
+    if (_selectedPriceLevel != null) {
       active.add('Price: ${'\$' * _selectedPriceLevel!}');
-    if (_minRating != null)
+    }
+    if (_minRating != null) {
       active.add('Rating: ${_minRating!.toStringAsFixed(1)}+');
-    if (_nearbyOnly)
+    }
+    if (_nearbyOnly) {
       active.add('Nearby: ${_nearbyRadiusKm.toStringAsFixed(1)}km');
-    if (_sortBy != 'distance')
+    }
+    if (_sortBy != 'distance') {
       active.add('Sort: ${_sortBy[0].toUpperCase()}${_sortBy.substring(1)}');
+    }
 
     if (active.isEmpty) return const SizedBox.shrink();
 

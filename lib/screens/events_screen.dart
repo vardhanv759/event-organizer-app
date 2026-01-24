@@ -544,8 +544,9 @@ class _EventItem {
     if (lower.contains('concert')) return 'Live Concerts';
     if (lower.contains('comedy')) return 'Comedy';
     if (lower.contains('family')) return 'Family';
-    if (lower.contains('theatre') || lower.contains('theater'))
+    if (lower.contains('theatre') || lower.contains('theater')) {
       return 'Theatre';
+    }
     if (lower.contains('festival')) return 'Festivals';
     if (lower.contains('performance')) return 'Performance';
 

@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../services/messaging_service.dart';
 
 class ParkingSpaceDetailsScreen extends StatelessWidget {
   final String spaceId;
@@ -28,7 +31,17 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
             return const Center(child: Text('Space not found.'));
           }
 
+          // ✅ FIX: define d FIRST
           final d = snap.data!.data() ?? <String, dynamic>{};
+
+          // Provider and current user IDs
+          final providerUid = (d['provider_uid'] as String?)?.trim() ?? '';
+          final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+          final canMessage =
+              providerUid.isNotEmpty &&
+              myUid.isNotEmpty &&
+              providerUid != myUid;
 
           String s(String key, {String fallback = ''}) =>
               (d[key] as String?)?.trim().isNotEmpty == true
@@ -61,7 +74,7 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
           return Stack(
             children: [
               SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 132),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -107,8 +120,44 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+
               _BottomCTA(
                 hourly: hourly,
+                canMessage: canMessage,
+                onMessageProvider: () async {
+                  if (!canMessage) {
+                    final reason = myUid.isEmpty
+                        ? 'Please sign in to message the provider.'
+                        : providerUid.isEmpty
+                        ? 'Provider profile not available for this space.'
+                        : 'You cannot message your own listing.';
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(reason)));
+                    return;
+                  }
+
+                  try {
+                    await MessagingService.sendChatRequest(
+                      toUid: providerUid,
+                      contextType: 'private_parking',
+                      contextRefId: spaceId,
+                    );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Request sent. Wait for acceptance to chat.',
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to send request: $e')),
+                    );
+                  }
+                },
                 onBook: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -421,7 +470,15 @@ class _BottomCTA extends StatelessWidget {
   final double hourly;
   final VoidCallback onBook;
 
-  const _BottomCTA({required this.hourly, required this.onBook});
+  final bool canMessage;
+  final VoidCallback onMessageProvider;
+
+  const _BottomCTA({
+    required this.hourly,
+    required this.onBook,
+    required this.canMessage,
+    required this.onMessageProvider,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -439,33 +496,66 @@ class _BottomCTA extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Text(
-                '£${hourly.toStringAsFixed(2)}/hr',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                  color: Color(0xFF0F172A),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '£${hourly.toStringAsFixed(2)}/hr',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: onBook,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4F46E5),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'Book this space',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: onBook,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4F46E5),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onMessageProvider,
+                icon: const Icon(Icons.chat_bubble_rounded),
+                label: Text(
+                  canMessage
+                      ? 'Message provider (request)'
+                      : 'Message not available',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
-                ),
-                child: const Text(
-                  'Book this space',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+                  side: BorderSide(
+                    color: canMessage
+                        ? const Color(0xFF4F46E5)
+                        : const Color(0xFFCBD5E1),
+                  ),
+                  foregroundColor: canMessage
+                      ? const Color(0xFF4F46E5)
+                      : const Color(0xFF64748B),
                 ),
               ),
             ),

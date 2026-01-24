@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+import 'private_parking_messages_screen.dart';
 import 'parking_provider_apply_screen.dart';
 import 'parking_provider_dashboard_screen.dart';
 import 'private_parking_nearby_screen.dart';
@@ -104,6 +104,21 @@ class PrivateParkingScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => const PrivateParkingNearbyScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                _BigRowButton(
+                  title: 'Messages',
+                  subtitle: 'Requests and chats with drivers/providers.',
+                  icon: Icons.chat_bubble_rounded,
+                  gradient: const [Color(0xFF22C55E), Color(0xFF0EA5E9)],
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PrivateParkingMessagesScreen(),
                       ),
                     );
                   },

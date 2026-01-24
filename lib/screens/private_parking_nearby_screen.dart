@@ -29,6 +29,7 @@ class _PrivateParkingNearbyScreenState
     // MVP: Avoid composite indexes; filter/sort client-side.
     return FirebaseFirestore.instance
         .collection('parking_spaces')
+        .where('status_lc', isEqualTo: 'approved')
         .limit(200)
         .snapshots();
   }

@@ -101,30 +101,57 @@ class _LoginScreenState extends State<LoginScreen>
         .collection('users')
         .doc(user.uid);
 
-    await usersRef.set({
+    // Read existing doc once so we don’t overwrite good data
+    final snap = await usersRef.get();
+    final exists = snap.exists;
+    final existing = snap.data() ?? {};
+
+    String? nonEmptyString(dynamic v) {
+      if (v is String) {
+        final t = v.trim();
+        return t.isEmpty ? null : t;
+      }
+      return null;
+    }
+
+    final incomingName =
+        nonEmptyString(user.displayName) ?? nonEmptyString(extraFields['name']);
+
+    // Preserve existing name if incomingName is null
+    final finalName = incomingName ?? nonEmptyString(existing['name']);
+
+    final firstName = nonEmptyString(extraFields['firstName']);
+    final lastName = nonEmptyString(extraFields['lastName']);
+    final dob = nonEmptyString(extraFields['dob']);
+
+    // Build update map carefully (only set fields that are meaningful)
+    final Map<String, dynamic> data = {
       'uid': user.uid,
-      'name': user.displayName ?? extraFields['name'] ?? 'User',
       'email': user.email,
       'photoUrl': user.photoURL,
       'provider': providerId,
-
-      // event app specific fields
-      'role': 'user',
-      'organizerStatus': 'none', // none | pending | approved | rejected
-      'isOrganizer': false,
-
-      // stats for dashboard
-      'savedEventsCount': 0,
-      'savedParkingCount': 0,
-      'bookingsCount': 0,
-
-      // extra profile fields
-      'firstName': extraFields['firstName'],
-      'lastName': extraFields['lastName'],
-      'dob': extraFields['dob'],
       'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+
+    if (finalName != null) data['name'] = finalName;
+    if (firstName != null) data['firstName'] = firstName;
+    if (lastName != null) data['lastName'] = lastName;
+    if (dob != null) data['dob'] = dob;
+
+    // Only set these defaults on first create
+    if (!exists) {
+      data.addAll({
+        'role': 'user',
+        'organizerStatus': 'none', // none | pending | approved | rejected
+        'isOrganizer': false,
+        'savedEventsCount': 0,
+        'savedParkingCount': 0,
+        'bookingsCount': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await usersRef.set(data, SetOptions(merge: true));
   }
 
   // ---------------------------------------------------------------------------
@@ -196,6 +223,8 @@ class _LoginScreenState extends State<LoginScreen>
           'dob': dob,
         });
 
+        await user.updateDisplayName('$firstName $lastName');
+
         // Send verification email once; user stays logged in
         try {
           await user.sendEmailVerification();
@@ -245,6 +274,11 @@ class _LoginScreenState extends State<LoginScreen>
         email: email,
         password: password,
       );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // Ensure users/{uid} exists for older accounts too
+        await _writeUserDocument(user, 'password', {});
+      }
       // No emailVerified check here – HomeScreen will block features
       // until the email is actually verified.
     } on FirebaseAuthException catch (e) {

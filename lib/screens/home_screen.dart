@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'private_parking_messages_screen.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -49,6 +50,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       }
       await FirebaseAuth.instance.signOut();
     }
+  }
+
+  Stream<int> _pendingChatRequestsCountStream(String uid) {
+    return FirebaseFirestore.instance
+        .collection('chat_requests')
+        .where('to_uid', isEqualTo: uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((s) => s.docs.length);
   }
 
   Future<void> _checkEmailVerified() async {
@@ -601,6 +611,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     onTap: () => Navigator.pop(context),
                   ),
                   _DrawerTile(
+                    icon: Icons.mark_unread_chat_alt_rounded,
+                    title: 'Message Requests',
+                    trailing: StreamBuilder<int>(
+                      stream: _pendingChatRequestsCountStream(
+                        FirebaseAuth.instance.currentUser!.uid,
+                      ),
+                      builder: (context, snap) {
+                        final count = snap.data ?? 0;
+                        if (count <= 0) return const SizedBox.shrink();
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PrivateParkingMessagesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+
+                  _DrawerTile(
                     icon: Icons.bookmark_rounded,
                     title: 'Saved Events',
                     onTap: () => Navigator.pop(context),
@@ -735,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
-
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     if (authUser == null) {
       return const Scaffold(body: Center(child: Text('No user logged in.')));
     }
@@ -800,10 +852,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
-                      child: SafeNetworkAvatar(
-                        radius: 18,
-                        photoUrl: (data?['photoUrl'] as String?)?.trim(),
-                        name: (data?['name'] as String?)?.trim(),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          SafeNetworkAvatar(
+                            radius: 18,
+                            photoUrl: (data?['photoUrl'] as String?)?.trim(),
+                            name: (data?['name'] as String?)?.trim(),
+                          ),
+
+                          if (uid != null)
+                            StreamBuilder<int>(
+                              stream: _pendingChatRequestsCountStream(uid),
+                              builder: (context, snap) {
+                                final count = snap.data ?? 0;
+                                if (count <= 0) return const SizedBox.shrink();
+
+                                return Positioned(
+                                  top: -4,
+                                  right: -4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEF4444),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      count > 99 ? '99+' : '$count',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -1917,43 +2010,39 @@ class _PremiumInfoStrip extends StatelessWidget {
 class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String? subtitle;
   final VoidCallback onTap;
+  final Widget? trailing; // ✅ NEW
 
   const _DrawerTile({
     required this.icon,
     required this.title,
-    this.subtitle,
     required this.onTap,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF334155)),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF0F172A),
-          ),
-        ),
-        subtitle: subtitle == null
-            ? null
-            : Text(
-                subtitle!,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF0F172A)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
                 ),
               ),
-        onTap: onTap,
+            ),
+            if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF64748B)),
+          ],
+        ),
       ),
     );
   }
