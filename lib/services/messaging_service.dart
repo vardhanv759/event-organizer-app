@@ -152,8 +152,9 @@ class MessagingService {
       final status =
           (req['status'] as String?)?.toLowerCase().trim() ?? 'pending';
 
-      if (toUid != uid)
+      if (toUid != uid) {
         throw Exception('Not authorized to accept this request.');
+      }
       if (status == 'accepted') return chatIdForUids(fromUid, toUid);
       if (status != 'pending') throw Exception('Request is not pending.');
 

@@ -57,8 +57,9 @@ class _IncomingRequests extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: q.snapshots(),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return const _EmptyCard(text: 'Error loading requests');
+        }
         if (snap.connectionState == ConnectionState.waiting) {
           return const _LoadingCard();
         }
@@ -185,8 +186,9 @@ class _OutgoingRequests extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: q.snapshots(),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return const _EmptyCard(text: 'Error loading requests');
+        }
         if (snap.connectionState == ConnectionState.waiting) {
           return const _LoadingCard();
         }
