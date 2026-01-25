@@ -7,9 +7,7 @@ class MessagingService {
 
   static String _requireUid() {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) {
-      throw Exception('Not signed in.');
-    }
+    if (uid == null) throw Exception('Not signed in.');
     return uid;
   }
 
@@ -30,6 +28,33 @@ class MessagingService {
     return '${fromUid}_${toUid}_${contextType}_$ctx';
   }
 
+  // -------------------------
+  // BADGE STREAMS
+  // -------------------------
+
+  /// Count of pending requests for this user.
+  static Stream<int> pendingRequestsCountStream(String uid) {
+    return _db
+        .collection('chat_requests')
+        .where('to_uid', isEqualTo: uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((s) => s.docs.length);
+  }
+
+  /// Count of chats where this user is in unread_for (1 per chat, not per msg).
+  static Stream<int> unreadChatsCountStream(String uid) {
+    return _db
+        .collection('chats')
+        .where('unread_for', arrayContains: uid)
+        .snapshots()
+        .map((s) => s.docs.length);
+  }
+
+  // -------------------------
+  // REQUESTS
+  // -------------------------
+
   /// Creates a request (idempotent).
   static Future<String> sendChatRequest({
     required String toUid,
@@ -37,10 +62,7 @@ class MessagingService {
     String? contextRefId,
   }) async {
     final fromUid = _requireUid();
-
-    if (fromUid == toUid) {
-      throw Exception('You cannot message yourself.');
-    }
+    if (fromUid == toUid) throw Exception('You cannot message yourself.');
 
     final reqId = requestIdFor(
       fromUid: fromUid,
@@ -69,7 +91,7 @@ class MessagingService {
         final data = snap.data() as Map<String, dynamic>;
         final status = (data['status'] as String?)?.toLowerCase().trim();
 
-        // If previously rejected/cancelled, allow resending by setting back to pending.
+        // If previously rejected/cancelled, allow resending.
         if (status != 'pending' && status != 'accepted') {
           tx.update(ref, {'status': 'pending', 'updated_at': now});
         }
@@ -86,10 +108,10 @@ class MessagingService {
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
-      final d = snap.data() as Map<String, dynamic>;
-      final fromUid = d['from_uid'] as String?;
 
-      if (fromUid != uid) return;
+      final d = snap.data() as Map<String, dynamic>;
+      if (d['from_uid'] != uid) return;
+
       tx.update(ref, {
         'status': 'cancelled',
         'updated_at': FieldValue.serverTimestamp(),
@@ -104,10 +126,10 @@ class MessagingService {
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
-      final d = snap.data() as Map<String, dynamic>;
-      final toUid = d['to_uid'] as String?;
 
-      if (toUid != uid) return;
+      final d = snap.data() as Map<String, dynamic>;
+      if (d['to_uid'] != uid) return;
+
       tx.update(ref, {
         'status': 'rejected',
         'updated_at': FieldValue.serverTimestamp(),
@@ -115,17 +137,14 @@ class MessagingService {
     });
   }
 
-  /// Accept request + create chat if missing.
+  /// Accept request + create chat if missing. Returns chatId.
   static Future<String> acceptChatRequest(String requestId) async {
     final uid = _requireUid();
-
     final reqRef = _db.collection('chat_requests').doc(requestId);
 
     return _db.runTransaction((tx) async {
       final reqSnap = await tx.get(reqRef);
-      if (!reqSnap.exists) {
-        throw Exception('Request not found.');
-      }
+      if (!reqSnap.exists) throw Exception('Request not found.');
 
       final req = reqSnap.data() as Map<String, dynamic>;
       final fromUid = req['from_uid'] as String;
@@ -133,15 +152,10 @@ class MessagingService {
       final status =
           (req['status'] as String?)?.toLowerCase().trim() ?? 'pending';
 
-      if (toUid != uid) {
+      if (toUid != uid)
         throw Exception('Not authorized to accept this request.');
-      }
-      if (status == 'accepted') {
-        return chatIdForUids(fromUid, toUid);
-      }
-      if (status != 'pending') {
-        throw Exception('Request is not pending.');
-      }
+      if (status == 'accepted') return chatIdForUids(fromUid, toUid);
+      if (status != 'pending') throw Exception('Request is not pending.');
 
       // Update request status
       tx.update(reqRef, {
@@ -161,12 +175,37 @@ class MessagingService {
           'created_at': FieldValue.serverTimestamp(),
           'last_message': '',
           'last_message_at': FieldValue.serverTimestamp(),
+          'last_sender_id': '',
+          'unread_for': <String>[], // no unread on creation
+          'read_at': {
+            fromUid: FieldValue.serverTimestamp(),
+            toUid: FieldValue.serverTimestamp(),
+          },
         });
       }
 
       return chatId;
     });
   }
+
+  // -------------------------
+  // UNREAD LOGIC
+  // -------------------------
+
+  /// Call when opening a chat screen.
+  static Future<void> markChatRead(String chatId) async {
+    final uid = _requireUid();
+    final chatRef = _db.collection('chats').doc(chatId);
+
+    await chatRef.update({
+      'unread_for': FieldValue.arrayRemove([uid]),
+      'read_at.$uid': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // -------------------------
+  // MESSAGES
+  // -------------------------
 
   static Future<void> sendMessage({
     required String chatId,
@@ -186,11 +225,15 @@ class MessagingService {
       final chat = chatSnap.data() as Map<String, dynamic>;
       final participants =
           (chat['participants'] as List?)?.cast<String>() ?? <String>[];
+
       if (!participants.contains(uid)) {
         throw Exception('Not authorized to send messages in this chat.');
       }
 
+      final receivers = participants.where((p) => p != uid).toList();
       final now = FieldValue.serverTimestamp();
+
+      // write message
       tx.set(msgRef, {
         'sender_id': uid,
         'text': trimmed,
@@ -198,7 +241,14 @@ class MessagingService {
         'type': 'text',
       });
 
-      tx.update(chatRef, {'last_message': trimmed, 'last_message_at': now});
+      // update chat summary + unread_for (ONE PER CHAT)
+      tx.update(chatRef, {
+        'last_message': trimmed,
+        'last_message_at': now,
+        'last_sender_id': uid,
+        'unread_for': FieldValue.arrayUnion(receivers),
+        'read_at.$uid': now, // sender read time
+      });
     });
   }
 }

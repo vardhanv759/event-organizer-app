@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'private_parking_messages_screen.dart';
-
+import '../services/messaging_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -788,9 +788,69 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final myUid = FirebaseAuth.instance.currentUser!.uid;
+
     if (authUser == null) {
       return const Scaffold(body: Center(child: Text('No user logged in.')));
     }
+    StreamBuilder<int>(
+      stream: MessagingService.pendingRequestsCountStream(myUid),
+      builder: (context, reqSnap) {
+        final reqCount = reqSnap.data ?? 0;
+
+        final myUid = FirebaseAuth.instance.currentUser!.uid;
+
+        return StreamBuilder<int>(
+          stream: MessagingService.pendingRequestsCountStream(myUid),
+          builder: (context, reqSnap) {
+            final reqCount = reqSnap.data ?? 0;
+
+            return StreamBuilder<int>(
+              stream: MessagingService.unreadChatsCountStream(myUid),
+              builder: (context, unreadSnap) {
+                final unreadChats = unreadSnap.data ?? 0;
+
+                final badge = reqCount + unreadChats;
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      child: Text('V'), // your avatar UI
+                    ),
+                    if (badge > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Text(
+                            '$badge',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
 
     final userDocRef = FirebaseFirestore.instance
         .collection('users')

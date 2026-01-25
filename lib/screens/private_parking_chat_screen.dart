@@ -23,6 +23,16 @@ class _PrivateParkingChatScreenState extends State<PrivateParkingChatScreen> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+
+    // Mark as read when chat screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MessagingService.markChatRead(widget.chatId);
+    });
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -55,6 +65,7 @@ class _PrivateParkingChatScreenState extends State<PrivateParkingChatScreen> {
           },
         ),
       ),
+
       body: Column(
         children: [
           Expanded(
