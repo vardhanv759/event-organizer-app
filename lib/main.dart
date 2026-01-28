@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'screens/payment_success_screen.dart';
+import 'screens/payment_cancel_screen.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -20,6 +21,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Event Discovery App',
       debugShowCheckedModeBanner: false,
+      routes: {
+        '/payment-success': (context) => const PaymentSuccessScreen(),
+        '/payment-cancel': (context) => const PaymentCancelScreen(),
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6366F1),

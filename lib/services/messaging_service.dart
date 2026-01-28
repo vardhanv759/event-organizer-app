@@ -28,6 +28,82 @@ class MessagingService {
     return '${fromUid}_${toUid}_${contextType}_$ctx';
   }
 
+  Future<String> getOrCreateChat({
+    required String currentUid,
+    required String otherUid,
+  }) async {
+    final ids = [currentUid, otherUid]..sort();
+    final chatId = '${ids[0]}_${ids[1]}';
+
+    final chatRef = FirebaseFirestore.instance.collection('chats').doc(chatId);
+
+    final snap = await chatRef.get();
+    if (!snap.exists) {
+      await chatRef.set({
+        'members': ids,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastMessage': null,
+        'lastMessageAt': null,
+      });
+    }
+
+    return chatRef.id;
+  }
+
+  // -------------------------
+  // NEW: CHECK CHAT EXISTENCE
+  // -------------------------
+
+  /// Check if an accepted chat exists between current user and another user
+  static Future<String?> getExistingChatId(String otherUid) async {
+    final myUid = _requireUid();
+    final chatId = chatIdForUids(myUid, otherUid);
+
+    final chatDoc = await _db.collection('chats').doc(chatId).get();
+
+    if (chatDoc.exists) {
+      return chatId;
+    }
+    return null;
+  }
+
+  /// Stream to check if chat exists (for real-time updates)
+  static Stream<String?> chatExistsStream(String otherUid) {
+    final myUid = _auth.currentUser?.uid;
+    if (myUid == null) return Stream.value(null);
+
+    final chatId = chatIdForUids(myUid, otherUid);
+
+    return _db.collection('chats').doc(chatId).snapshots().map((snap) {
+      return snap.exists ? chatId : null;
+    });
+  }
+
+  /// Check if there's a pending request
+  static Stream<Map<String, dynamic>?> requestStatusStream({
+    required String otherUid,
+    required String contextType,
+    String? contextRefId,
+  }) {
+    final myUid = _auth.currentUser?.uid;
+    if (myUid == null) return Stream.value(null);
+
+    final requestId = requestIdFor(
+      fromUid: myUid,
+      toUid: otherUid,
+      contextType: contextType,
+      contextRefId: contextRefId,
+    );
+
+    return _db.collection('chat_requests').doc(requestId).snapshots().map((
+      snap,
+    ) {
+      if (!snap.exists) return null;
+      final data = snap.data();
+      return {'status': data?['status'], 'requestId': requestId};
+    });
+  }
+
   // -------------------------
   // BADGE STREAMS
   // -------------------------
@@ -49,6 +125,13 @@ class MessagingService {
         .where('unread_for', arrayContains: uid)
         .snapshots()
         .map((s) => s.docs.length);
+  }
+
+  /// Combined notification count (requests + unread chats)
+  static Stream<int> totalNotificationCountStream(String uid) {
+    return pendingRequestsCountStream(uid).asyncExpand((requests) {
+      return unreadChatsCountStream(uid).map((unread) => requests + unread);
+    });
   }
 
   // -------------------------
