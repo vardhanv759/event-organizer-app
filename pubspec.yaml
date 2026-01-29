@@ -50,7 +50,7 @@ dependencies:
   google_fonts: ^6.2.1
   cloud_functions: ^6.0.5
   firebase_functions: 0.0.1-dev
-
+  intl: ^0.18.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

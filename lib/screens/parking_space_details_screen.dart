@@ -528,7 +528,7 @@ class _ModernInfoCard extends StatelessWidget {
 }
 
 // ============================================================================
-// FLOATING BOTTOM ACTIONS
+// SMART FLOATING BOTTOM ACTIONS WITH CHAT REQUEST FLOW
 // ============================================================================
 
 class _FloatingBottomActions extends StatelessWidget {
@@ -548,131 +548,346 @@ class _FloatingBottomActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 30,
-            offset: const Offset(0, -10),
+    final user = FirebaseAuth.instance.currentUser;
+    final myUid = user?.uid ?? '';
+
+    // Check if user can message
+    final canMessage =
+        providerUid.isNotEmpty && myUid.isNotEmpty && providerUid != myUid;
+
+    if (!canMessage) {
+      // Static bottom bar (no messaging)
+      return _buildBottomBar(
+        context,
+        hourlyRate: hourlyRate,
+        chatIcon: Icons.chat_bubble_rounded,
+        chatLabel: 'Chat',
+        chatColor: Colors.grey,
+        onChatPressed: null,
+        isApproved: isApproved,
+        spaceId: spaceId,
+        spaceTitle: spaceTitle,
+        providerUid: providerUid,
+      );
+    }
+
+    // Smart bottom bar with chat request flow
+    return StreamBuilder<String?>(
+      stream: MessagingService.chatExistsStream(providerUid),
+      builder: (context, chatSnap) {
+        final existingChatId = chatSnap.data;
+
+        if (existingChatId != null) {
+          // Chat exists - show chat button
+          return _buildBottomBar(
+            context,
+            hourlyRate: hourlyRate,
+            chatIcon: Icons.chat_bubble_rounded,
+            chatLabel: 'Chat',
+            chatColor: const Color(0xFF10B981), // Green
+            onChatPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PrivateParkingChatScreen(
+                    chatId: existingChatId,
+                    otherUid: providerUid,
+                  ),
+                ),
+              );
+            },
+            isApproved: isApproved,
+            spaceId: spaceId,
+            spaceTitle: spaceTitle,
+            providerUid: providerUid,
+          );
+        }
+
+        // No chat exists - check request status
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: MessagingService.requestStatusStream(
+            otherUid: providerUid,
+            contextType: 'private_parking',
+            contextRefId: spaceId,
+          ),
+          builder: (context, reqSnap) {
+            final requestData = reqSnap.data;
+            final status = requestData?['status'] as String?;
+
+            if (status == 'pending') {
+              // Request pending
+              return _PendingRequestBottomBar(
+                hourlyRate: hourlyRate,
+                requestId: requestData!['requestId'] as String,
+                isApproved: isApproved,
+                spaceId: spaceId,
+                spaceTitle: spaceTitle,
+                providerUid: providerUid,
+              );
+            }
+
+            // No request - show request button
+            return _RequestChatBottomBar(
+              hourlyRate: hourlyRate,
+              providerUid: providerUid,
+              isApproved: isApproved,
+              spaceId: spaceId,
+              spaceTitle: spaceTitle,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ============================================================================
+// PENDING REQUEST BOTTOM BAR
+// ============================================================================
+
+class _PendingRequestBottomBar extends StatefulWidget {
+  final double hourlyRate;
+  final String requestId;
+  final bool isApproved;
+  final String spaceId;
+  final String spaceTitle;
+  final String providerUid;
+
+  const _PendingRequestBottomBar({
+    required this.hourlyRate,
+    required this.requestId,
+    required this.isApproved,
+    required this.spaceId,
+    required this.spaceTitle,
+    required this.providerUid,
+  });
+
+  @override
+  State<_PendingRequestBottomBar> createState() =>
+      _PendingRequestBottomBarState();
+}
+
+class _PendingRequestBottomBarState extends State<_PendingRequestBottomBar> {
+  bool _busy = false;
+
+  Future<void> _cancel() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    try {
+      await MessagingService.cancelChatRequest(widget.requestId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Request cancelled'),
+          backgroundColor: Color(0xFF64748B),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildBottomBar(
+      context,
+      hourlyRate: widget.hourlyRate,
+      chatIcon: _busy ? Icons.hourglass_empty_rounded : Icons.schedule_rounded,
+      chatLabel: _busy ? 'Cancelling...' : 'Pending',
+      chatColor: const Color(0xFFF59E0B), // Orange
+      onChatPressed: _busy ? null : _cancel,
+      isApproved: widget.isApproved,
+      spaceId: widget.spaceId,
+      spaceTitle: widget.spaceTitle,
+      providerUid: widget.providerUid,
+    );
+  }
+}
+
+// ============================================================================
+// REQUEST CHAT BOTTOM BAR
+// ============================================================================
+
+class _RequestChatBottomBar extends StatefulWidget {
+  final double hourlyRate;
+  final String providerUid;
+  final bool isApproved;
+  final String spaceId;
+  final String spaceTitle;
+
+  const _RequestChatBottomBar({
+    required this.hourlyRate,
+    required this.providerUid,
+    required this.isApproved,
+    required this.spaceId,
+    required this.spaceTitle,
+  });
+
+  @override
+  State<_RequestChatBottomBar> createState() => _RequestChatBottomBarState();
+}
+
+class _RequestChatBottomBarState extends State<_RequestChatBottomBar> {
+  bool _busy = false;
+
+  Future<void> _sendRequest() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+
+    try {
+      await MessagingService.sendChatRequest(
+        toUid: widget.providerUid,
+        contextType: 'private_parking',
+        contextRefId: widget.spaceId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✉️ Chat request sent! Wait for acceptance.'),
+          backgroundColor: Color(0xFF6366F1),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildBottomBar(
+      context,
+      hourlyRate: widget.hourlyRate,
+      chatIcon: _busy ? Icons.send_rounded : Icons.chat_bubble_outline_rounded,
+      chatLabel: _busy ? 'Sending...' : 'Request Chat',
+      chatColor: const Color(0xFF6366F1), // Blue
+      onChatPressed: _busy ? null : _sendRequest,
+      isApproved: widget.isApproved,
+      spaceId: widget.spaceId,
+      spaceTitle: widget.spaceTitle,
+      providerUid: widget.providerUid,
+    );
+  }
+}
+
+// ============================================================================
+// BOTTOM BAR BUILDER (Shared)
+// ============================================================================
+
+Widget _buildBottomBar(
+  BuildContext context, {
+  required double hourlyRate,
+  required IconData chatIcon,
+  required String chatLabel,
+  required Color chatColor,
+  required VoidCallback? onChatPressed,
+  required bool isApproved,
+  required String spaceId,
+  required String spaceTitle,
+  required String providerUid,
+}) {
+  return Container(
+    margin: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(28),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 30,
+          offset: const Offset(0, -10),
+        ),
+      ],
+    ),
+    child: SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.local_parking_rounded,
+                color: Color(0xFF6366F1),
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '£${hourlyRate.toStringAsFixed(2)}/hour',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _ModernButton(
+                  onPressed: onChatPressed,
+                  icon: chatIcon,
+                  label: chatLabel,
+                  isSecondary: false,
+                  buttonColor: chatColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: _ModernButton(
+                  onPressed: isApproved
+                      ? () async {
+                          final user = FirebaseAuth.instance.currentUser;
+                          if (user == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please sign in to book.'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          await showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => _PremiumBookingSheet(
+                              spaceId: spaceId,
+                              spaceTitle: spaceTitle,
+                              hourlyRate: hourlyRate,
+                              providerUid: providerUid,
+                            ),
+                          );
+                        }
+                      : null,
+                  icon: isApproved
+                      ? Icons.event_available_rounded
+                      : Icons.lock_rounded,
+                  label: isApproved ? 'Book Now' : 'Not Available',
+                  isSecondary: false,
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.local_parking_rounded,
-                  color: Color(0xFF6366F1),
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '£${hourlyRate.toStringAsFixed(2)}/hour',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _ModernButton(
-                    onPressed: () async {
-                      final user = FirebaseAuth.instance.currentUser;
-                      if (user == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please sign in to chat.'),
-                          ),
-                        );
-                        return;
-                      }
-                      if (providerUid.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Provider not available for this space.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-
-                      final chatId = await MessagingService().getOrCreateChat(
-                        otherUid: providerUid,
-                        currentUid: user.uid,
-                      );
-
-                      if (context.mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PrivateParkingChatScreen(
-                              chatId: chatId,
-                              otherUid: providerUid,
-                            ),
-                          ),
-                        );
-                      }
-                    },
-                    icon: Icons.chat_bubble_rounded,
-                    label: 'Chat',
-                    isSecondary: true,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: _ModernButton(
-                    onPressed: isApproved
-                        ? () async {
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Please sign in to book.'),
-                                ),
-                              );
-                              return;
-                            }
-
-                            await showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => _PremiumBookingSheet(
-                                spaceId: spaceId,
-                                spaceTitle: spaceTitle,
-                                hourlyRate: hourlyRate,
-                                providerUid: providerUid,
-                              ),
-                            );
-                          }
-                        : null,
-                    icon: Icons.event_available_rounded,
-                    label: 'Book Now',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }
 
 class _ModernButton extends StatelessWidget {
@@ -680,23 +895,30 @@ class _ModernButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool isSecondary;
+  final Color? buttonColor;
 
   const _ModernButton({
     required this.onPressed,
     required this.icon,
     required this.label,
     this.isSecondary = false,
+    this.buttonColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final baseColor = buttonColor ?? const Color(0xFF6366F1);
+
     return Container(
       height: 56,
       decoration: BoxDecoration(
         gradient: isSecondary
             ? null
-            : const LinearGradient(
-                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+            : enabled
+            ? LinearGradient(colors: [baseColor, baseColor.withOpacity(0.8)])
+            : LinearGradient(
+                colors: [Colors.grey.shade300, Colors.grey.shade400],
               ),
         color: isSecondary ? const Color(0xFFF8F9FF) : null,
         borderRadius: BorderRadius.circular(16),
@@ -705,13 +927,15 @@ class _ModernButton extends StatelessWidget {
             : null,
         boxShadow: isSecondary
             ? null
-            : [
+            : enabled
+            ? [
                 BoxShadow(
-                  color: const Color(0xFF6366F1).withOpacity(0.3),
+                  color: baseColor.withOpacity(0.3),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
-              ],
+              ]
+            : null,
       ),
       child: Material(
         color: Colors.transparent,
@@ -728,13 +952,18 @@ class _ModernButton extends StatelessWidget {
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: isSecondary ? const Color(0xFF6366F1) : Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.3,
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: isSecondary
+                          ? const Color(0xFF6366F1)
+                          : Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.3,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

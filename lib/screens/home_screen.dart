@@ -2,11 +2,12 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'private_parking_messages_screen.dart';
 import '../services/messaging_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'my_bookings_screen.dart';
+import 'private_parking_messages_screen.dart';
 
 import 'events_screen.dart';
 import 'dining_screen.dart';
@@ -606,9 +607,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     onTap: () => Navigator.pop(context),
                   ),
                   _DrawerTile(
-                    icon: Icons.confirmation_number_rounded,
+                    icon: Icons.receipt_long_rounded,
                     title: 'My Bookings',
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MyBookingsScreen(),
+                        ),
+                      );
+                    },
                   ),
                   _DrawerTile(
                     icon: Icons.mark_unread_chat_alt_rounded,
