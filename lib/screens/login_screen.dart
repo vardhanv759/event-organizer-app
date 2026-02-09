@@ -351,7 +351,7 @@ class _LoginScreenState extends State<LoginScreen>
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Color(0xFF7C3AED).withOpacity(0.15),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -622,13 +622,7 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0), Color(0xFFDA22FF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        decoration: const BoxDecoration(color: Colors.white),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -676,13 +670,13 @@ class _LoginScreenState extends State<LoginScreen>
             );
           },
           child: Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  Colors.white.withOpacity(0.35),
-                  Colors.white.withOpacity(0.1),
+                  Color(0xFF7C3AED).withOpacity(0.2),
+                  Color(0xFF7C3AED).withOpacity(0.1),
                 ],
               ),
               boxShadow: [
@@ -694,42 +688,37 @@ class _LoginScreenState extends State<LoginScreen>
               ],
             ),
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withOpacity(0.2),
               ),
               child: const Icon(
                 Icons.event_available_rounded,
-                size: 72,
-                color: Colors.white,
+                size: 48,
+                color: Color(0xFF7C3AED),
               ),
             ),
           ),
         ),
         const SizedBox(height: 24),
-        ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [Colors.white, Color(0xFFFFFBEB)],
-          ).createShader(bounds),
-          child: const Text(
-            'Event Discovery',
-            style: TextStyle(
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: -1.5,
-            ),
+        const Text(
+          'Event Discovery',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF7C3AED),
+            letterSpacing: -0.8,
           ),
         ),
         const SizedBox(height: 8),
-        Text(
+        const Text(
           'Find events, parking & food nearby',
           style: TextStyle(
-            fontSize: 16,
-            color: Colors.white.withOpacity(0.95),
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            fontSize: 14,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
           ),
         ),
       ],
@@ -737,69 +726,38 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildGlassmorphicCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.25),
-                Colors.white.withOpacity(0.15),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.3),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 40,
-                offset: const Offset(0, 20),
-              ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_emailMode == EmailAuthMode.login) ...[
+              _buildSocialButtons(),
+              const SizedBox(height: 20),
+              _buildDivider(),
+              const SizedBox(height: 20),
+              _buildEmailLoginForm(),
+              const SizedBox(height: 16),
+              _buildRegisterLink(),
+            ] else ...[
+              _buildBackToLoginButton(),
+              const SizedBox(height: 20),
+              _buildEmailRegisterForm(),
             ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildAuthModeTabs(),
-                const SizedBox(height: 32),
-                _buildSocialButtons(),
-                const SizedBox(height: 24),
-                _buildDivider(),
-                const SizedBox(height: 24),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0.0, 0.1),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: _emailMode == EmailAuthMode.login
-                      ? _buildEmailLoginForm()
-                      : _buildEmailRegisterForm(),
-                ),
-                const SizedBox(height: 24),
-                _buildFeaturesList(),
-                const SizedBox(height: 16),
-                _buildFooter(),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -895,35 +853,135 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildSocialButtons() {
     return Column(
       children: [
-        _buildModernSocialButton(
-          onTap: () => _signInWithGoogle(context),
-          icon: Icons.g_mobiledata_rounded,
-          label: 'Continue with Google',
-          gradient: const LinearGradient(
-            colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-          ),
-        ),
+        _buildGoogleButton(),
         const SizedBox(height: 12),
-        _buildModernSocialButton(
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Apple Sign-In coming soon!'),
-                backgroundColor: Colors.black87,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+        _buildAppleButton(),
+      ],
+    );
+  }
+
+  Widget _buildGoogleButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _isLoading ? null : () => _signInWithGoogle(context),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: _isLoading
+              ? const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFF7C3AED),
+                      ),
+                    ),
+                  ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.g_mobiledata_rounded,
+                        size: 24,
+                        color: Color(0xFF4285F4),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Continue with Google',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppleButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _isLoading
+            ? null
+            : () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Apple Sign-In coming soon!'),
+                    backgroundColor: Colors.black87,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                );
+              },
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: const Color(0xFF000000),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.apple, size: 24, color: Colors.black),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Continue with Apple',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.3,
                 ),
               ),
-            );
-          },
-          icon: Icons.apple,
-          label: 'Continue with Apple',
-          gradient: const LinearGradient(
-            colors: [Color(0xFF2C3E50), Color(0xFF000000)],
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -993,37 +1051,19 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildDivider() {
     return Row(
       children: [
-        Expanded(
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.transparent, Colors.white.withOpacity(0.5)],
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+        Expanded(child: Container(height: 1, color: const Color(0xFFE2E8F0))),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
           child: Text(
             'or continue with email',
             style: TextStyle(
-              fontSize: 13,
-              color: Colors.white.withOpacity(0.9),
-              fontWeight: FontWeight.w500,
+              fontSize: 12,
+              color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
-        Expanded(
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.white.withOpacity(0.5), Colors.transparent],
-              ),
-            ),
-          ),
-        ),
+        Expanded(child: Container(height: 1, color: const Color(0xFFE2E8F0))),
       ],
     );
   }
@@ -1056,7 +1096,7 @@ class _LoginScreenState extends State<LoginScreen>
             suffixIcon: IconButton(
               icon: Icon(
                 _loginPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                color: Colors.white.withOpacity(0.7),
+                color: const Color(0xFF64748B),
                 size: 20,
               ),
               onPressed: () {
@@ -1075,19 +1115,20 @@ class _LoginScreenState extends State<LoginScreen>
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: _showForgotPasswordDialog,
-              child: Text(
+              child: const Text(
                 'Forgot Password?',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.95),
+                  color: Color(0xFF7C3AED),
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
           _buildModernActionButton(
-            label: 'Sign In',
+            label: 'LOGIN',
             onPressed: () => _loginWithEmail(context),
             icon: Icons.arrow_forward_rounded,
           ),
@@ -1217,7 +1258,7 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           const SizedBox(height: 24),
           _buildModernActionButton(
-            label: 'Create Account',
+            label: 'REGISTER',
             onPressed: () => _registerWithEmail(context),
             icon: Icons.check_circle_outline,
           ),
@@ -1239,9 +1280,9 @@ class _LoginScreenState extends State<LoginScreen>
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
       ),
       child: TextFormField(
         controller: controller,
@@ -1251,28 +1292,21 @@ class _LoginScreenState extends State<LoginScreen>
         keyboardType: keyboardType,
         validator: validator,
         style: const TextStyle(
-          color: Colors.white,
+          color: Color(0xFF0F172A),
           fontSize: 15,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(
-            color: Colors.white.withOpacity(0.8),
-            fontSize: 14,
-          ),
-          prefixIcon: Icon(
-            icon,
-            color: Colors.white.withOpacity(0.8),
-            size: 22,
-          ),
+          labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+          prefixIcon: Icon(icon, color: const Color(0xFF7C3AED), size: 22),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 18,
+            horizontal: 18,
+            vertical: 16,
           ),
-          errorStyle: const TextStyle(color: Color(0xFFFECDD3), fontSize: 12),
+          errorStyle: const TextStyle(color: Color(0xFFEF4444), fontSize: 12),
         ),
       ),
     );
@@ -1287,14 +1321,14 @@ class _LoginScreenState extends State<LoginScreen>
       height: 56,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFFFFFFFF), Color(0xFFF0F0F0)],
+          colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: const Color(0xFF7C3AED).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -1302,7 +1336,7 @@ class _LoginScreenState extends State<LoginScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: _isLoading ? null : onPressed,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: Center(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1311,13 +1345,17 @@ class _LoginScreenState extends State<LoginScreen>
                   label,
                   style: const TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF667EEA),
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
                     letterSpacing: 0.5,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(icon, size: 20, color: const Color(0xFF667EEA)),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 20,
+                  color: Colors.white,
+                ),
               ],
             ),
           ),
@@ -1380,12 +1418,69 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  Widget _buildBackToLoginButton() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: () {
+          setState(() => _emailMode = EmailAuthMode.login);
+        },
+        icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF7C3AED)),
+        label: const Text(
+          'Back to Login',
+          style: TextStyle(
+            color: Color(0xFF7C3AED),
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRegisterLink() {
+    return Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            'New user? ',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => _emailMode = EmailAuthMode.register);
+            },
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Register here',
+              style: TextStyle(
+                color: Color(0xFF7C3AED),
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFooter() {
     return Text(
       'By continuing, you agree to our Terms & Privacy Policy',
-      style: TextStyle(
+      style: const TextStyle(
         fontSize: 11,
-        color: Colors.white.withOpacity(0.75),
+        color: Color(0xFF94A3B8),
         height: 1.5,
       ),
       textAlign: TextAlign.center,

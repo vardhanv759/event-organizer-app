@@ -5,6 +5,7 @@ import 'private_parking_messages_screen.dart';
 import 'parking_provider_apply_screen.dart';
 import 'parking_provider_dashboard_screen.dart';
 import 'private_parking_nearby_screen.dart';
+import 'wembley_communities_screen.dart';
 
 class PrivateParkingScreen extends StatelessWidget {
   final Map<String, dynamic>
@@ -35,9 +36,6 @@ class PrivateParkingScreen extends StatelessWidget {
         builder: (context, snap) {
           final userDoc = snap.data?.data() ?? <String, dynamic>{};
 
-          // IMPORTANT: you use "parkingProviderStatus" in apply screen
-          // and sometimes you had "parkingProviderStatus" vs "parkingProviderStatus".
-          // We'll read both safely.
           final status =
               ((userDoc['parkingProviderStatus'] ??
                           userDoc['parkingProvider_status'] ??
@@ -48,94 +46,104 @@ class PrivateParkingScreen extends StatelessWidget {
                   .toLowerCase() ??
               'none';
 
-          return Padding(
+          return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
-            child: Column(
-              children: [
-                _BigRowButton(
-                  title: 'Register your private parking space',
-                  subtitle: status == 'approved'
-                      ? 'Manage your spaces and add new listings.'
-                      : 'Earn money by renting your driveway/bay.',
-                  icon: Icons.add_business_rounded,
-                  gradient: const [Color(0xFF0EA5E9), Color(0xFF6366F1)],
-                  badgeText: status == 'approved'
-                      ? 'Approved provider'
-                      : (status == 'pending' ? 'Pending review' : null),
-                  onTap: () async {
-                    if (status == 'approved') {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              const ParkingProviderDashboardScreen(),
-                        ),
-                      );
-                      return;
-                    }
+            children: [
+              _BigRowButton(
+                title: 'Register your private parking space',
+                subtitle: status == 'approved'
+                    ? 'Manage your spaces and add new listings.'
+                    : 'Earn money by renting your driveway/bay.',
+                icon: Icons.add_business_rounded,
+                gradient: const [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                badgeText: status == 'approved'
+                    ? 'Approved provider'
+                    : (status == 'pending' ? 'Pending review' : null),
+                onTap: () async {
+                  if (status == 'approved') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ParkingProviderDashboardScreen(),
+                      ),
+                    );
+                    return;
+                  }
 
-                    if (status == 'pending') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Your provider application is pending manual review.',
-                          ),
+                  if (status == 'pending') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Your provider application is pending manual review.',
                         ),
-                      );
-                      return;
-                    }
+                      ),
+                    );
+                    return;
+                  }
 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ParkingProviderApplyScreen(),
-                      ),
-                    );
-                  },
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ParkingProviderApplyScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              _BigRowButton(
+                title: 'Private parking nearby',
+                subtitle: 'Browse and book private spaces around Wembley.',
+                icon: Icons.location_on_rounded,
+                gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PrivateParkingNearbyScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              _BigRowButton(
+                title: 'Messages',
+                subtitle: 'Requests and chats with drivers/providers.',
+                icon: Icons.chat_bubble_rounded,
+                gradient: const [Color(0xFF22C55E), Color(0xFF0EA5E9)],
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PrivateParkingMessagesScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 14), // ✅ FIX: spacing added here
+              _BigRowButton(
+                title: 'Wembley Communities',
+                subtitle: 'Join your local zone and connect.',
+                icon: Icons.location_city_rounded,
+                gradient: const [Color(0xFFEC4899), Color(0xFF8B5CF6)],
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const WembleyCommunitiesScreen(),
+                  ),
                 ),
-                const SizedBox(height: 14),
-                _BigRowButton(
-                  title: 'Private parking nearby',
-                  subtitle: 'Browse and book private spaces around Wembley.',
-                  icon: Icons.location_on_rounded,
-                  gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PrivateParkingNearbyScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-                _BigRowButton(
-                  title: 'Messages',
-                  subtitle: 'Requests and chats with drivers/providers.',
-                  icon: Icons.chat_bubble_rounded,
-                  gradient: const [Color(0xFF22C55E), Color(0xFF0EA5E9)],
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PrivateParkingMessagesScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-                _InfoCard(
-                  title: 'How it works',
-                  points: const [
-                    'Providers apply and are manually approved.',
-                    'Approved providers can add spaces from the Provider Dashboard.',
-                    'Only approved spaces become visible to drivers.',
-                    'Drivers choose date/time + hours and pay (Stripe phase).',
-                    'Exact address is shown only after payment (Stripe phase).',
-                  ],
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 14),
+              _InfoCard(
+                title: 'How it works',
+                points: const [
+                  'Providers apply and are manually approved.',
+                  'Approved providers can add spaces from the Provider Dashboard.',
+                  'Only approved spaces become visible to drivers.',
+                  'Drivers choose date/time + hours and pay (Stripe phase).',
+                  'Exact address is shown only after payment (Stripe phase).',
+                ],
+              ),
+            ],
           );
         },
       ),
@@ -186,14 +194,14 @@ class _BigRowButton extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              height: 52,
               width: 52,
+              height: 52,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.18),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: Colors.white.withOpacity(0.22)),
               ),
-              child: Icon(icon, color: Colors.white, size: 26),
+              child: Icon(icon, color: Colors.white),
             ),
             const SizedBox(width: 14),
             Expanded(

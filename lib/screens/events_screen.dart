@@ -178,7 +178,7 @@ class _EventsListScreenState extends State<EventsListScreen>
                           crossAxisCount: 2,
                           mainAxisSpacing: 14,
                           crossAxisSpacing: 14,
-                          childAspectRatio: 0.76,
+                          childAspectRatio: 0.68,
                         ),
                     delegate: SliverChildBuilderDelegate((context, index) {
                       final e = filtered[index];
@@ -596,7 +596,7 @@ class _EventGridCard extends StatelessWidget {
 
               // Content
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -631,12 +631,15 @@ class _EventGridCard extends StatelessWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _Pill(
-                          icon: Icons.category_rounded,
-                          text: event.category,
+                        Flexible(
+                          child: _Pill(
+                            icon: Icons.category_rounded,
+                            text: event.category,
+                            truncate: true,
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
+                        const SizedBox(width: 6),
+                        Flexible(
                           child: _Pill(
                             icon: Icons.location_on_rounded,
                             text: 'Wembley',
@@ -830,7 +833,7 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(999),
@@ -839,7 +842,7 @@ class _Pill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 16, color: const Color(0xFF64748B)),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               text,
@@ -1131,7 +1134,7 @@ class _Tag extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 16, color: const Color(0xFF64748B)),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text(
             text,
             style: const TextStyle(
@@ -1159,7 +1162,7 @@ class _GridSkeletonSliver extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: 14,
         crossAxisSpacing: 14,
-        childAspectRatio: 0.76,
+        childAspectRatio: 0.68,
       ),
       delegate: SliverChildBuilderDelegate(
         (context, index) => Shimmer.fromColors(

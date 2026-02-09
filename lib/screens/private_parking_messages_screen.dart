@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/messaging_service.dart';
+import '../services/zone_prompt_service.dart';
 import 'private_parking_chat_screen.dart';
+import 'zone_chat_screen.dart';
 
 class PrivateParkingMessagesScreen extends StatelessWidget {
   const PrivateParkingMessagesScreen({super.key});
@@ -44,7 +46,6 @@ class PrivateParkingMessagesScreen extends StatelessWidget {
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // Notification badge in AppBar
         actions: [
           _NotificationBadge(uid: myUid),
           const SizedBox(width: 8),
@@ -52,12 +53,15 @@ class PrivateParkingMessagesScreen extends StatelessWidget {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          // Trigger refresh
           await Future.delayed(const Duration(milliseconds: 500));
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // ✅ NEW: Public Chats row at top
+            _PublicChatsSection(myUid: myUid),
+            const SizedBox(height: 24),
+
             _IncomingRequestsSection(myUid: myUid),
             const SizedBox(height: 24),
             _OutgoingRequestsSection(myUid: myUid),
@@ -66,6 +70,297 @@ class PrivateParkingMessagesScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            PUBLIC CHATS (NEW)                              */
+/* -------------------------------------------------------------------------- */
+
+class _PublicChatsSection extends StatelessWidget {
+  final String myUid;
+  const _PublicChatsSection({required this.myUid});
+
+  static const _zones = <Map<String, String>>[
+    {'id': 'wembley_ne', 'name': 'Wembley NE'},
+    {'id': 'wembley_se', 'name': 'Wembley SE'},
+    {'id': 'wembley_sw', 'name': 'Wembley SW'},
+    {'id': 'wembley_nw', 'name': 'Wembley NW'},
+  ];
+
+  Future<void> _openOrPromptJoin(
+    BuildContext context, {
+    required String zoneId,
+    required String zoneName,
+  }) async {
+    // 1) If already a member -> open chat
+    final memberDoc = await FirebaseFirestore.instance
+        .collection('zones')
+        .doc(zoneId)
+        .collection('members')
+        .doc(myUid)
+        .get();
+
+    if (memberDoc.exists) {
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ZoneChatScreen(zoneId: zoneId, zoneName: zoneName),
+        ),
+      );
+      return;
+    }
+
+    // 2) If user previously rejected -> never ask again
+    final decision = await ZonePromptService.getDecisionForZone(zoneId);
+    if (decision == 'rejected') {
+      if (!context.mounted) return;
+      _toast(context, 'You chose not to join $zoneName (won’t ask again).');
+      return;
+    }
+
+    // 3) Ask user to join
+    if (!context.mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 46,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                "Join $zoneName public chat?",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "Chat with local parking providers and see updates in this Wembley zone.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        await ZonePromptService.setDecision(
+                          zoneId: zoneId,
+                          decision: 'rejected',
+                        );
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      child: const Text("No, don’t ask again"),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final u = FirebaseAuth.instance.currentUser;
+                        final displayName =
+                            (u?.displayName?.trim().isNotEmpty ?? false)
+                            ? u!.displayName!.trim()
+                            : 'User';
+                        final photoUrl =
+                            (u?.photoURL?.trim().isNotEmpty ?? false)
+                            ? u!.photoURL!.trim()
+                            : '';
+
+                        await ZonePromptService.joinZone(
+                          zoneId: zoneId,
+                          displayName: displayName,
+                          photoUrl: photoUrl,
+                        );
+
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ZoneChatScreen(
+                              zoneId: zoneId,
+                              zoneName: zoneName,
+                            ),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text("Join"),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle('Public Chats (Wembley)'),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _zones.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              final zoneId = _zones[i]['id']!;
+              final zoneName = _zones[i]['name']!;
+
+              return _ZoneCard(
+                myUid: myUid,
+                zoneId: zoneId,
+                zoneName: zoneName,
+                onTap: () => _openOrPromptJoin(
+                  context,
+                  zoneId: zoneId,
+                  zoneName: zoneName,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ZoneCard extends StatelessWidget {
+  final String myUid;
+  final String zoneId;
+  final String zoneName;
+  final VoidCallback onTap;
+
+  const _ZoneCard({
+    required this.myUid,
+    required this.zoneId,
+    required this.zoneName,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final memberRef = FirebaseFirestore.instance
+        .collection('zones')
+        .doc(zoneId)
+        .collection('members')
+        .doc(myUid);
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: memberRef.snapshots(),
+      builder: (context, snap) {
+        final isMember = snap.data?.exists ?? false;
+
+        return GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 210,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFEEF2FF), Color(0xFFFDF4FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: const Color(0xFF6366F1).withOpacity(0.18),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withOpacity(0.08),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  height: 46,
+                  width: 46,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4F46E5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.public_rounded, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        zoneName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        isMember
+                            ? 'Tap to open chat'
+                            : 'Not joined (tap to join)',
+                        style: TextStyle(
+                          color: isMember
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFF64748B),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Color(0xFF64748B),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -90,9 +385,7 @@ class _NotificationBadge extends StatelessWidget {
           children: [
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
-              onPressed: () {
-                // Could navigate to a dedicated notifications screen
-              },
+              onPressed: () {},
             ),
             if (count > 0)
               Positioned(
@@ -240,7 +533,7 @@ class _IncomingRequestTileState extends State<_IncomingRequestTile>
     try {
       await MessagingService.rejectChatRequest(widget.requestId);
       if (!mounted) return;
-      _toast(context, 'Request rejected', isError: false);
+      _toast(context, 'Request rejected');
     } catch (e) {
       if (mounted) _toast(context, 'Reject failed: $e', isError: true);
     } finally {
@@ -310,18 +603,10 @@ class _IncomingRequestTileState extends State<_IncomingRequestTile>
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF6366F1).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
             child: const Icon(
               Icons.mark_unread_chat_alt_rounded,
               color: Colors.white,
-              size: 24,
             ),
           ),
           title: _UserName(uid: widget.fromUid),
@@ -346,13 +631,13 @@ class _IncomingRequestTileState extends State<_IncomingRequestTile>
                   children: [
                     _ActionButton(
                       icon: Icons.close_rounded,
-                      color: const Color(0xFFEF4444),
+                      color: Color(0xFFEF4444),
                       onPressed: _reject,
                     ),
                     const SizedBox(width: 8),
                     _ActionButton(
                       icon: Icons.check_rounded,
-                      color: const Color(0xFF10B981),
+                      color: Color(0xFF10B981),
                       onPressed: _accept,
                     ),
                   ],
@@ -430,119 +715,31 @@ class _OutgoingRequests extends StatelessWidget {
   }
 }
 
-class _OutgoingRequestTile extends StatefulWidget {
+class _OutgoingRequestTile extends StatelessWidget {
   final String requestId;
   final String toUid;
 
   const _OutgoingRequestTile({required this.requestId, required this.toUid});
 
   @override
-  State<_OutgoingRequestTile> createState() => _OutgoingRequestTileState();
-}
-
-class _OutgoingRequestTileState extends State<_OutgoingRequestTile>
-    with SingleTickerProviderStateMixin {
-  bool _busy = false;
-  late AnimationController _animController;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _cancel() async {
-    if (_busy) return;
-    _animController.forward().then((_) => _animController.reverse());
-    setState(() => _busy = true);
-    try {
-      await MessagingService.cancelChatRequest(widget.requestId);
-      if (!mounted) return;
-      _toast(context, 'Request cancelled', isError: false);
-    } catch (e) {
-      if (mounted) _toast(context, 'Cancel failed: $e', isError: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
-          leading: Container(
-            height: 50,
-            width: 50,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.call_made_rounded,
-              color: Color(0xFF6366F1),
-              size: 24,
-            ),
-          ),
-          title: _UserName(uid: widget.toUid),
-          subtitle: const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: Text(
-              'Request pending',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF64748B),
-              ),
-            ),
-          ),
-          trailing: _busy
-              ? const SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : TextButton.icon(
-                  onPressed: _cancel,
-                  icon: const Icon(Icons.cancel_outlined, size: 18),
-                  label: const Text(
-                    'Cancel',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFEF4444),
-                  ),
-                ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.schedule_rounded, color: Color(0xFF64748B)),
+        title: _UserName(uid: toUid),
+        subtitle: const Text('Pending'),
+        trailing: TextButton(
+          onPressed: () async {
+            await MessagingService.cancelChatRequest(requestId);
+            _toast(context, 'Request cancelled');
+          },
+          child: const Text('Cancel'),
         ),
       ),
     );
@@ -550,7 +747,7 @@ class _OutgoingRequestTileState extends State<_OutgoingRequestTile>
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                CHATS SECTION                               */
+/*                                   CHATS                                    */
 /* -------------------------------------------------------------------------- */
 
 class _ChatsSection extends StatelessWidget {
@@ -559,82 +756,63 @@ class _ChatsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        StreamBuilder<int>(
-          stream: MessagingService.unreadChatsCountStream(myUid),
-          builder: (context, snapshot) {
-            final count = snapshot.data ?? 0;
-            return _SectionTitle('Active Chats', badge: count);
-          },
-        ),
-        const SizedBox(height: 12),
-        _ChatsList(myUid: myUid),
-      ],
-    );
-  }
-}
-
-class _ChatsList extends StatelessWidget {
-  final String myUid;
-  const _ChatsList({required this.myUid});
-
-  @override
-  Widget build(BuildContext context) {
     final q = FirebaseFirestore.instance
         .collection('chats')
         .where('participants', arrayContains: myUid);
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: q.snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return const _EmptyCard(
-            text: 'Error loading chats',
-            icon: Icons.error_outline,
-          );
-        }
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const _LoadingCard();
-        }
-
-        final docs = snap.data?.docs ?? const [];
-        if (docs.isEmpty) {
-          return const _EmptyCard(
-            text: 'No active chats yet',
-            icon: Icons.chat_bubble_outline,
-          );
-        }
-
-        return Column(
-          children: docs.map((d) {
-            final data = d.data();
-            final participants =
-                (data['participants'] as List?)?.cast<String>() ?? <String>[];
-            if (!participants.contains(myUid) || participants.length < 2) {
-              return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle('Chats'),
+        const SizedBox(height: 12),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: q.snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const _EmptyCard(
+                text: 'Error loading chats',
+                icon: Icons.error_outline,
+              );
             }
-            final otherUid = participants.firstWhere(
-              (u) => u != myUid,
-              orElse: () => '',
-            );
-            if (otherUid.isEmpty) return const SizedBox.shrink();
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const _LoadingCard();
+            }
 
-            final last = (data['last_message'] as String?)?.trim() ?? '';
-            final unreadFor =
-                (data['unread_for'] as List?)?.cast<String>() ?? <String>[];
-            final isUnread = unreadFor.contains(myUid);
+            final docs = snap.data?.docs ?? const [];
+            if (docs.isEmpty) {
+              return const _EmptyCard(
+                text: 'No chats yet',
+                icon: Icons.chat_bubble_outline,
+              );
+            }
 
-            return _ChatTile(
-              chatId: d.id,
-              otherUid: otherUid,
-              lastMessage: last,
-              isUnread: isUnread,
+            return Column(
+              children: docs.map((d) {
+                final data = d.data();
+                final parts =
+                    (data['participants'] as List?)?.cast<String>() ?? [];
+                final otherUid = parts.firstWhere(
+                  (x) => x != myUid,
+                  orElse: () => '',
+                );
+                if (otherUid.isEmpty) return const SizedBox.shrink();
+
+                final lastMsg = (data['last_message'] as String?) ?? '';
+                final unreadFor =
+                    (data['unread_for'] as List?)?.cast<String>() ?? [];
+                final isUnread = unreadFor.contains(myUid);
+
+                return _ChatTile(
+                  chatId: d.id,
+                  otherUid: otherUid,
+                  lastMessage: lastMsg,
+                  unread: isUnread,
+                );
+              }).toList(),
             );
-          }).toList(),
-        );
-      },
+          },
+        ),
+      ],
     );
   }
 }
@@ -643,13 +821,13 @@ class _ChatTile extends StatelessWidget {
   final String chatId;
   final String otherUid;
   final String lastMessage;
-  final bool isUnread;
+  final bool unread;
 
   const _ChatTile({
     required this.chatId,
     required this.otherUid,
     required this.lastMessage,
-    required this.isUnread,
+    required this.unread,
   });
 
   @override
@@ -657,191 +835,79 @@ class _ChatTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        gradient: isUnread
-            ? const LinearGradient(
-                colors: [Color(0xFFDCFCE7), Color(0xFFD1FAE5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        color: isUnread ? null : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isUnread
-              ? const Color(0xFF10B981).withOpacity(0.3)
-              : const Color(0xFFE2E8F0),
-          width: isUnread ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isUnread
-                ? const Color(0xFF10B981).withOpacity(0.1)
-                : Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              height: 50,
-              width: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isUnread
-                      ? [const Color(0xFF10B981), const Color(0xFF059669)]
-                      : [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color:
-                        (isUnread
-                                ? const Color(0xFF10B981)
-                                : const Color(0xFF6366F1))
-                            .withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.chat_bubble_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            if (isUnread)
-              Positioned(
-                right: -4,
-                top: -4,
-                child: Container(
-                  height: 14,
-                  width: 14,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        title: _UserName(uid: otherUid),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            lastMessage.isEmpty ? 'Tap to open chat' : lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600,
-              color: isUnread
-                  ? const Color(0xFF0F172A)
-                  : const Color(0xFF64748B),
-            ),
-          ),
-        ),
-        trailing: Icon(
-          Icons.arrow_forward_ios_rounded,
-          size: 16,
-          color: isUnread ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
-        ),
         onTap: () {
-          Navigator.of(context).push(
+          Navigator.push(
+            context,
             MaterialPageRoute(
               builder: (_) =>
                   PrivateParkingChatScreen(chatId: chatId, otherUid: otherUid),
             ),
           );
         },
+        leading: CircleAvatar(
+          backgroundColor: unread
+              ? const Color(0xFF4F46E5)
+              : const Color(0xFFCBD5E1),
+          child: const Icon(Icons.person, color: Colors.white),
+        ),
+        title: _UserName(uid: otherUid),
+        subtitle: Text(
+          lastMessage.isEmpty ? 'Say hi 👋' : lastMessage,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: unread
+            ? Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF4F46E5),
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
       ),
     );
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                   HELPERS                                  */
+/*                                 UI PARTS                                   */
 /* -------------------------------------------------------------------------- */
-
-class _UserName extends StatelessWidget {
-  final String uid;
-  const _UserName({required this.uid});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData || !(snap.data?.exists ?? false)) {
-          return Text(
-            uid,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
-            ),
-          );
-        }
-        final data = snap.data!.data() ?? <String, dynamic>{};
-        final name = (data['name'] as String?)?.trim();
-        return Text(
-          (name == null || name.isEmpty) ? uid : name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0F172A),
-          ),
-        );
-      },
-    );
-  }
-}
 
 class _SectionTitle extends StatelessWidget {
   final String text;
   final int? badge;
+
   const _SectionTitle(this.text, {this.badge});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-            ),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
           ),
         ),
-        if (badge != null && badge! > 0)
+        if (badge != null && badge! > 0) ...[
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFEF4444).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              color: const Color(0xFFEF4444),
+              borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              badge! > 99 ? '99+' : badge.toString(),
+              badge!.toString(),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
@@ -849,6 +915,7 @@ class _SectionTitle extends StatelessWidget {
               ),
             ),
           ),
+        ],
       ],
     );
   }
@@ -857,26 +924,29 @@ class _SectionTitle extends StatelessWidget {
 class _EmptyCard extends StatelessWidget {
   final String text;
   final IconData icon;
+
   const _EmptyCard({required this.text, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Icon(icon, size: 48, color: Colors.grey.shade300),
-          const SizedBox(height: 12),
-          Text(
-            text,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade500,
+          Icon(icon, color: const Color(0xFF94A3B8)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -891,13 +961,52 @@ class _LoadingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: const Center(child: CircularProgressIndicator()),
+      child: const Row(
+        children: [
+          SizedBox(
+            height: 18,
+            width: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Text(
+            'Loading...',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserName extends StatelessWidget {
+  final String uid;
+  // your users collection uses "name"
+  const _UserName({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .snapshots(),
+      builder: (context, snap) {
+        final name = (snap.data?.data()?['name'] as String?)?.trim();
+        return Text(
+          (name == null || name.isEmpty) ? 'User' : name,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        );
+      },
     );
   }
 }
@@ -915,31 +1024,28 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: IconButton(
-        icon: Icon(icon, size: 20),
-        color: color,
-        onPressed: onPressed,
-        padding: const EdgeInsets.all(8),
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Icon(icon, color: color),
       ),
     );
   }
 }
 
-void _toast(BuildContext context, String msg, {bool isError = false}) {
+void _toast(BuildContext context, String text, {bool isError = false}) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(msg),
+      content: Text(text),
       backgroundColor: isError
           ? const Color(0xFFEF4444)
-          : const Color(0xFF10B981),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          : const Color(0xFF111827),
     ),
   );
 }

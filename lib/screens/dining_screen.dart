@@ -635,7 +635,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                                   crossAxisCount: 2,
                                   crossAxisSpacing: 12,
                                   mainAxisSpacing: 12,
-                                  childAspectRatio: 0.76,
+                                  childAspectRatio: 0.62,
                                 ),
                           )
                         : SliverList(
@@ -878,12 +878,12 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
           children: [
             // Image + badges
             SizedBox(
-              height: 120,
+              height: 105,
               width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildRestaurantImage(place, height: 120),
+                  _buildRestaurantImage(place, height: 105),
 
                   // soft gradient overlay for premium contrast
                   Container(
@@ -935,7 +935,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
 
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1013,7 +1013,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -1022,7 +1022,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                           backgroundColor: const Color(0xFF111827),
                           foregroundColor: Colors.white,
                           elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -1290,7 +1290,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 0.76,
+              childAspectRatio: 0.62,
             ),
           ),
         ),
