@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// ===============================
 /// EVENTS (Wembley) - Premium UI
@@ -555,6 +556,145 @@ class _EventItem {
   }
 }
 
+// ADD THIS WIDGET TO events_screen.dart (before _EventGridCard class)
+
+class _FavoriteButton extends StatefulWidget {
+  final String eventId;
+  final Map<String, dynamic> eventData;
+
+  const _FavoriteButton({required this.eventId, required this.eventData});
+
+  @override
+  State<_FavoriteButton> createState() => _FavoriteButtonState();
+}
+
+class _FavoriteButtonState extends State<_FavoriteButton> {
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+  bool _isSaved = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfSaved();
+  }
+
+  Future<void> _checkIfSaved() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final doc = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('savedEvents')
+          .doc(widget.eventId)
+          .get();
+
+      if (mounted) {
+        setState(() => _isSaved = doc.exists);
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || _isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final docRef = _db
+          .collection('users')
+          .doc(uid)
+          .collection('savedEvents')
+          .doc(widget.eventId);
+
+      if (_isSaved) {
+        await docRef.delete();
+        if (mounted) {
+          setState(() => _isSaved = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Removed from saved events'),
+              backgroundColor: const Color(0xFF64748B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      } else {
+        await docRef.set({
+          ...widget.eventData,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          setState(() => _isSaved = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Saved to your events'),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _isLoading ? null : _toggleSave,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _isSaved
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: _isSaved
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF64748B),
+                  size: 20,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 /// ===============================
 /// Cards
 /// ===============================
@@ -589,9 +729,28 @@ class _EventGridCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Image
+              // Image with favorite button
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: _EventImage(url: event.imageUrl),
+                child: Stack(
+                  children: [
+                    _EventImage(url: event.imageUrl),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _FavoriteButton(
+                        eventId: event.id,
+                        eventData: {
+                          'title': event.title,
+                          'venue': event.venueName,
+                          'category': event.category,
+                          'imageUrl': event.imageUrl,
+                          'date': event.start,
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
               // Content

@@ -7,6 +7,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'my_profile_screen.dart';
+import 'saved_events_screen.dart';
+import 'saved_restaurants_screen.dart';
 
 import 'my_bookings_screen.dart';
 import 'private_parking_messages_screen.dart';
@@ -765,39 +767,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   _DrawerTile(
                     icon: Icons.bookmark_rounded,
                     title: 'Saved Events',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _DrawerTile(
-                    icon: Icons.favorite_rounded,
-                    title: 'Saved Restaurants',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(height: 8),
-                  const _DrawerDividerLabel(label: 'Shortcuts'),
-                  _DrawerTile(
-                    icon: Icons.local_offer_rounded,
-                    title: 'Offers',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const OffersScreen()),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.auto_awesome_rounded,
-                    title: 'Plan Your Day (AI)',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const AiPlannerScreen(),
+                          builder: (_) => const SavedEventsScreen(),
                         ),
                       );
                     },
                   ),
+                  _DrawerTile(
+                    icon: Icons.favorite_rounded,
+                    title: 'Saved Restaurants',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SavedRestaurantsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  const _DrawerDividerLabel(label: 'Shortcuts'),
                   const SizedBox(height: 8),
                   const _DrawerDividerLabel(label: 'Support'),
                   _DrawerTile(

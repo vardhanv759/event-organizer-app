@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DiningPlace {
   final String id;
@@ -134,6 +135,147 @@ class AdvancedDiningScreen extends StatefulWidget {
   State<AdvancedDiningScreen> createState() => _AdvancedDiningScreenState();
 }
 
+class _RestaurantFavoriteButton extends StatefulWidget {
+  final String restaurantId;
+  final Map<String, dynamic> restaurantData;
+
+  const _RestaurantFavoriteButton({
+    required this.restaurantId,
+    required this.restaurantData,
+  });
+
+  @override
+  State<_RestaurantFavoriteButton> createState() =>
+      _RestaurantFavoriteButtonState();
+}
+
+class _RestaurantFavoriteButtonState extends State<_RestaurantFavoriteButton> {
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+  bool _isSaved = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfSaved();
+  }
+
+  Future<void> _checkIfSaved() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final doc = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('savedRestaurants')
+          .doc(widget.restaurantId)
+          .get();
+
+      if (mounted) {
+        setState(() => _isSaved = doc.exists);
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || _isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final docRef = _db
+          .collection('users')
+          .doc(uid)
+          .collection('savedRestaurants')
+          .doc(widget.restaurantId);
+
+      if (_isSaved) {
+        await docRef.delete();
+        if (mounted) {
+          setState(() => _isSaved = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Removed from saved restaurants'),
+              backgroundColor: const Color(0xFF64748B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      } else {
+        await docRef.set({
+          ...widget.restaurantData,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          setState(() => _isSaved = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Saved to your restaurants'),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _isLoading ? null : _toggleSave,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _isSaved
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: _isSaved
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF64748B),
+                  size: 20,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -157,7 +299,8 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   @override
   void initState() {
     super.initState();
-    _initLocation();
+    // ✅ Important: request location after first frame (prevents occasional build timing issues)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initLocation());
   }
 
   @override
@@ -330,7 +473,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Nearby only'),
@@ -347,7 +489,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                           setState(() => _nearbyOnly = val);
                         },
                 ),
-
                 if (_nearbyOnly && _currentPosition != null) ...[
                   const SizedBox(height: 6),
                   Slider(
@@ -362,7 +503,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     },
                   ),
                 ],
-
                 const SizedBox(height: 14),
                 Text(
                   'Price Level',
@@ -389,7 +529,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     );
                   }).toList(),
                 ),
-
                 const SizedBox(height: 16),
                 Text(
                   'Minimum Rating: ${_minRating?.toStringAsFixed(1) ?? "Any"}',
@@ -409,7 +548,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     setState(() => _minRating = newVal);
                   },
                 ),
-
                 const SizedBox(height: 16),
                 Text(
                   'Sort By',
@@ -438,7 +576,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
@@ -500,17 +637,12 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
             .collection('Dining_wembley')
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
+          if (snapshot.hasError)
             return _buildErrorState(snapshot.error.toString());
-          }
-          if (!snapshot.hasData) {
-            return _buildPremiumLoading();
-          }
+          if (!snapshot.hasData) return _buildPremiumLoading();
 
           final docs = snapshot.data!.docs;
-          if (docs.isEmpty) {
-            return _buildEmptyState();
-          }
+          if (docs.isEmpty) return _buildEmptyState();
 
           final places = docs.map((d) => DiningPlace.fromFirestore(d)).toList();
 
@@ -522,7 +654,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                 }.toList()
                 ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-          // Ensure selected cuisine is valid
           if (_selectedCuisine != null &&
               !cuisines.contains(_selectedCuisine)) {
             _selectedCuisine = null;
@@ -569,7 +700,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               })
               .toList();
 
-          // Sort
+          // ✅ Sort (distance works ONLY when location is granted; null distances go last)
           entries.sort((a, b) {
             switch (_sortBy) {
               case 'distance':
@@ -596,7 +727,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               ),
               slivers: [
                 _buildPremiumSliverAppBar(context),
-
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
@@ -610,7 +740,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     ),
                   ),
                 ),
-
                 if (entries.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
@@ -625,6 +754,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 110),
                     sliver: _isGridView
                         ? SliverGrid(
+                            key: const PageStorageKey('dining_grid'),
                             delegate: SliverChildBuilderDelegate(
                               (ctx, index) =>
                                   _buildPremiumGridCard(entries[index]),
@@ -635,10 +765,12 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                                   crossAxisCount: 2,
                                   crossAxisSpacing: 12,
                                   mainAxisSpacing: 12,
-                                  childAspectRatio: 0.62,
+                                  childAspectRatio:
+                                      0.67, // ✅ reduces extra bottom space safely
                                 ),
                           )
                         : SliverList(
+                            key: const PageStorageKey('dining_list'),
                             delegate: SliverChildBuilderDelegate(
                               (ctx, index) => Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
@@ -715,7 +847,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
       ),
       child: Row(
         children: [
-          // Category dropdown
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -753,10 +884,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               ),
             ),
           ),
-
           const SizedBox(width: 10),
-
-          // Layout toggle (Grid / List)
           _LayoutToggle(
             isGrid: _isGridView,
             onGrid: () => setState(() => _isGridView = true),
@@ -805,18 +933,14 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   Widget _buildActiveFiltersChips() {
     final active = <String>[];
 
-    if (_selectedPriceLevel != null) {
+    if (_selectedPriceLevel != null)
       active.add('Price: ${'\$' * _selectedPriceLevel!}');
-    }
-    if (_minRating != null) {
+    if (_minRating != null)
       active.add('Rating: ${_minRating!.toStringAsFixed(1)}+');
-    }
-    if (_nearbyOnly) {
+    if (_nearbyOnly)
       active.add('Nearby: ${_nearbyRadiusKm.toStringAsFixed(1)}km');
-    }
-    if (_sortBy != 'distance') {
+    if (_sortBy != 'distance')
       active.add('Sort: ${_sortBy[0].toUpperCase()}${_sortBy.substring(1)}');
-    }
 
     if (active.isEmpty) return const SizedBox.shrink();
 
@@ -851,7 +975,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     );
   }
 
-  // -------------------- PREMIUM GRID CARD --------------------
+  // -------------------- PREMIUM GRID CARD (✅ FIXED: no Expanded/Spacer -> no crash) --------------------
   Widget _buildPremiumGridCard(_PlaceEntry entry) {
     final place = entry.place;
     final dist = entry.distanceMeters;
@@ -878,14 +1002,13 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
           children: [
             // Image + badges
             SizedBox(
-              height: 105,
+              height: 96,
               width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildRestaurantImage(place, height: 105),
+                  _buildRestaurantImage(place, height: 96),
 
-                  // soft gradient overlay for premium contrast
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -898,17 +1021,26 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                       ),
                     ),
                   ),
-
-                  if (place.hasHighRating)
-                    const Positioned(
-                      top: 10,
-                      right: 10,
-                      child: _MiniBadge(icon: Icons.star_rounded, text: '4.5+'),
+                  // Heart button
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: _RestaurantFavoriteButton(
+                      restaurantId: place.id,
+                      restaurantData: {
+                        'name': place.name,
+                        'address': place.address,
+                        'cuisine': place.cuisine,
+                        'rating': place.rating,
+                        'priceLevel': place.priceLevel,
+                        'photoUrl': place.photoUrl ?? place.photoReference,
+                      },
                     ),
+                  ),
                   if (place.isPopular)
                     const Positioned(
                       top: 10,
-                      left: 10,
+                      right: 10,
                       child: _MiniBadge(
                         icon: Icons.trending_up_rounded,
                         text: 'Popular',
@@ -933,108 +1065,113 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               ),
             ),
 
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            // ✅ FIX: No Expanded/Spacer here (Grid children must not use flex with unbounded constraints)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min, // ✅ important
+                children: [
+                  Text(
+                    place.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.2,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if ((place.address ?? '').trim().isNotEmpty)
                     Text(
-                      place.name,
-                      maxLines: 2,
+                      place.address!.trim(),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                        letterSpacing: -0.2,
-                        height: 1.15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    if ((place.address ?? '').trim().isNotEmpty)
-                      Text(
-                        place.address!.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF64748B),
-                          fontSize: 12,
+
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      if (place.rating != null) ...[
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 16,
+                          color: Color(0xFFF59E0B),
                         ),
-                      ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        if (place.rating != null) ...[
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Color(0xFFF59E0B),
+                        const SizedBox(width: 4),
+                        Text(
+                          place.rating!.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0F172A),
                           ),
-                          const SizedBox(width: 4),
+                        ),
+                        if (place.userRatingsTotal != null) ...[
+                          const SizedBox(width: 6),
                           Text(
-                            place.rating!.toStringAsFixed(1),
+                            '(${place.userRatingsTotal})',
                             style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
                             ),
                           ),
-                          if (place.userRatingsTotal != null) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              '(${place.userRatingsTotal})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF64748B),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
                         ],
-                        const Spacer(),
-                        if (distKm != null)
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.place_rounded,
-                                size: 16,
-                                color: Color(0xFFEF4444),
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${distKm.toStringAsFixed(1)} km',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF334155),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => _showRestaurantDetails(place, dist),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF111827),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.place_rounded,
+                            size: 16,
+                            color: Color(0xFFEF4444),
                           ),
-                        ),
-                        child: const Text(
-                          'View',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                          const SizedBox(width: 3),
+                          Text(
+                            distKm != null
+                                ? '${distKm.toStringAsFixed(1)} km'
+                                : '—',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF334155),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => _showRestaurantDetails(place, dist),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF111827),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
                       ),
+                      child: const Text(
+                        'View',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1043,7 +1180,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     );
   }
 
-  // -------------------- PREMIUM LIST CARD --------------------
+  // -------------------- PREMIUM LIST CARD (unchanged; list can safely use flex) --------------------
   Widget _buildPremiumListCard(_PlaceEntry entry) {
     final place = entry.place;
     final dist = entry.distanceMeters;
@@ -1121,25 +1258,26 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                         if (place.priceLevel != null)
                           _Tag(text: place.getPriceDisplay()),
                         const Spacer(),
-                        if (distKm != null)
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.place_rounded,
-                                size: 16,
-                                color: Color(0xFFEF4444),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.place_rounded,
+                              size: 16,
+                              color: Color(0xFFEF4444),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              distKm != null
+                                  ? '${distKm.toStringAsFixed(1)} km'
+                                  : '—',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF334155),
+                                fontSize: 12,
                               ),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${distKm.toStringAsFixed(1)} km',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF334155),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                     const Spacer(),
@@ -1231,9 +1369,9 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   Widget _buildImageFallback(double height) {
     return Container(
       height: height,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [const Color(0xFFFFEDD5), const Color(0xFFFEE2E2)],
+          colors: [Color(0xFFFFEDD5), Color(0xFFFEE2E2)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1290,7 +1428,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 0.62,
+              childAspectRatio: 0.60,
             ),
           ),
         ),
@@ -1340,6 +1478,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                   _nearbyOnly = false;
                   _nearbyRadiusKm = 5.0;
                   _searchController.clear();
+                  _sortBy = 'distance';
                 });
               },
               style: ElevatedButton.styleFrom(
@@ -1580,13 +1719,6 @@ class _DiningHeroHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                'Verified places • Better choices • Faster planning',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.90),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
               const Spacer(),
               _HeroSearchBar(
                 controller: controller,
@@ -1803,7 +1935,6 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
-
                 Row(
                   children: [
                     Expanded(
@@ -1838,7 +1969,6 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                     ],
                   ],
                 ),
-
                 if (onWebsite != null) ...[
                   const SizedBox(height: 10),
                   SizedBox(
