@@ -2,9 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:geolocator/geolocator.dart';
 
 class AccommodationScreen extends StatefulWidget {
-  const AccommodationScreen({super.key});
+  // Parameters for auto-showing hotel detail from search
+  final String? autoShowHotelId;
+  final Map<String, dynamic>? autoShowHotelData;
+
+  const AccommodationScreen({
+    super.key,
+    this.autoShowHotelId,
+    this.autoShowHotelData,
+  });
 
   @override
   State<AccommodationScreen> createState() => _AccommodationScreenState();
@@ -20,6 +30,11 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
   double? _minRating; // null = all
   _AccommodationViewMode _viewMode = _AccommodationViewMode.grid;
 
+  // Location for distance calculation
+  Position? _currentPosition;
+  bool _locationDenied = false;
+  String _sortBy = 'distance'; // distance, rating, name
+
   // Optional: quick “buckets” that feel like star filters
   final List<_RatingFilter> _ratingFilters = const [
     _RatingFilter(label: 'All ratings', min: null),
@@ -28,6 +43,120 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
     _RatingFilter(label: '3★ & up (3.0+)', min: 3.0),
     _RatingFilter(label: 'Under 3★', min: -1), // handled in client filter
   ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Request location after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initLocation();
+
+      // Auto-open hotel link if data is provided from search
+      if (widget.autoShowHotelId != null && widget.autoShowHotelData != null) {
+        _autoOpenHotel();
+      }
+    });
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        setState(() {
+          _locationDenied = true;
+          _currentPosition = null;
+        });
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() {
+          _locationDenied = true;
+          _currentPosition = null;
+        });
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _currentPosition = pos;
+        _locationDenied = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locationDenied = true;
+        _currentPosition = null;
+      });
+    }
+  }
+
+  double? _distanceFromUser(Map<String, dynamic> hotelData) {
+    if (_currentPosition == null) return null;
+
+    final lat = _toDouble(hotelData['lat']);
+    final lng = _toDouble(hotelData['lng']);
+
+    if (lat == 0 || lng == 0) return null;
+
+    return Geolocator.distanceBetween(
+      _currentPosition!.latitude,
+      _currentPosition!.longitude,
+      lat,
+      lng,
+    );
+  }
+
+  String _formatDistance(double? meters) {
+    if (meters == null) return '';
+    const metersToMiles = 0.000621371;
+    final miles = meters * metersToMiles;
+    return '${miles.toStringAsFixed(1)} mi';
+  }
+
+  void _autoOpenHotel() {
+    if (widget.autoShowHotelData == null) return;
+
+    try {
+      // Show a brief message before opening link
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Opening: ${widget.autoShowHotelData!['name'] ?? 'Hotel'}',
+          ),
+          backgroundColor: const Color(0xFF06B6D4),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      // Automatically open the hotel link
+      _openHotelLink(widget.autoShowHotelData!);
+    } catch (e) {
+      debugPrint('Error auto-opening hotel: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open hotel link'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
     // Fetch enough docs; we filter client-side for reliability and to avoid index headaches.
@@ -92,16 +221,42 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
     // Under 3★ special handling
     final under3 = _minRating == -1;
 
-    if (_minRating == null) return docs;
+    // Apply rating filter
+    final filtered = _minRating == null
+        ? docs
+        : docs.where((d) {
+            final data = d.data();
+            final ratingNum = data['rating'];
+            final rating = (ratingNum is num) ? ratingNum.toDouble() : 0.0;
 
-    return docs.where((d) {
-      final data = d.data();
-      final ratingNum = data['rating'];
-      final rating = (ratingNum is num) ? ratingNum.toDouble() : 0.0;
+            if (under3) return rating < 3.0;
+            return rating >= (_minRating ?? 0.0);
+          }).toList();
 
-      if (under3) return rating < 3.0;
-      return rating >= (_minRating ?? 0.0);
-    }).toList();
+    // Apply sorting
+    filtered.sort((a, b) {
+      final dataA = a.data();
+      final dataB = b.data();
+
+      switch (_sortBy) {
+        case 'distance':
+          final distA = _distanceFromUser(dataA) ?? double.infinity;
+          final distB = _distanceFromUser(dataB) ?? double.infinity;
+          return distA.compareTo(distB);
+        case 'rating':
+          final ratingA = _toDouble(dataA['rating']);
+          final ratingB = _toDouble(dataB['rating']);
+          return ratingB.compareTo(ratingA); // Higher rating first
+        case 'name':
+          final nameA = (dataA['name'] as String? ?? '').toLowerCase();
+          final nameB = (dataB['name'] as String? ?? '').toLowerCase();
+          return nameA.compareTo(nameB);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
   }
 
   @override
@@ -133,8 +288,10 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
                 ratingFilters: _ratingFilters,
                 currentMinRating: _minRating,
                 viewMode: _viewMode,
+                sortBy: _sortBy,
                 onChangedRating: (min) => setState(() => _minRating = min),
                 onChangedView: (mode) => setState(() => _viewMode = mode),
+                onChangedSort: (sort) => setState(() => _sortBy = sort),
               ),
             ),
           ),
@@ -181,9 +338,12 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final data = filtered[i].data();
+                      final distance = _distanceFromUser(data);
                       return _HotelListCard(
                         data: data,
+                        distance: distance,
                         onTap: () => _openHotelLink(data),
+                        formatDistance: _formatDistance,
                       );
                     },
                   );
@@ -192,16 +352,20 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
                 return SliverGrid(
                   delegate: SliverChildBuilderDelegate((context, i) {
                     final data = filtered[i].data();
+                    final distance = _distanceFromUser(data);
                     return _HotelGridCard(
                       data: data,
+                      distance: distance,
                       onTap: () => _openHotelLink(data),
+                      formatDistance: _formatDistance,
                     );
                   }, childCount: filtered.length),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 0.66,
+                    childAspectRatio:
+                        0.58, // Reduced to make cards taller (was 0.66)
                   ),
                 );
               },
@@ -223,95 +387,141 @@ class _FilterRow extends StatelessWidget {
   final List<_RatingFilter> ratingFilters;
   final double? currentMinRating;
   final _AccommodationViewMode viewMode;
+  final String sortBy;
   final ValueChanged<double?> onChangedRating;
   final ValueChanged<_AccommodationViewMode> onChangedView;
+  final ValueChanged<String> onChangedSort;
 
   const _FilterRow({
     required this.ratingFilters,
     required this.currentMinRating,
     required this.viewMode,
+    required this.sortBy,
     required this.onChangedRating,
     required this.onChangedView,
+    required this.onChangedSort,
   });
 
   @override
   Widget build(BuildContext context) {
     final border = BorderRadius.circular(18);
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: border,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 18,
-                  offset: const Offset(0, 12),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-              ],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<double?>(
-                value: currentMinRating,
-                isExpanded: true,
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-                items: ratingFilters.map((f) {
-                  return DropdownMenuItem<double?>(
-                    value: f.min,
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 18,
-                          color: Color(0xFFF59E0B),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(f.label)),
-                      ],
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: border,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 18,
+                      offset: const Offset(0, 12),
                     ),
-                  );
-                }).toList(),
-                onChanged: onChangedRating,
+                  ],
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<double?>(
+                    value: currentMinRating,
+                    isExpanded: true,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                    items: ratingFilters.map((f) {
+                      return DropdownMenuItem<double?>(
+                        value: f.min,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 18,
+                              color: Color(0xFFF59E0B),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(f.label)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: onChangedRating,
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: border,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 18,
-                offset: const Offset(0, 12),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: border,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              _MiniToggleButton(
-                selected: viewMode == _AccommodationViewMode.grid,
-                icon: Icons.grid_view_rounded,
-                onTap: () => onChangedView(_AccommodationViewMode.grid),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: sortBy,
+                  icon: const Icon(Icons.sort_rounded, size: 18),
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'distance',
+                      child: Text('Distance'),
+                    ),
+                    DropdownMenuItem(value: 'rating', child: Text('Rating')),
+                    DropdownMenuItem(value: 'name', child: Text('Name')),
+                  ],
+                  onChanged: (v) => v != null ? onChangedSort(v) : null,
+                ),
               ),
-              _MiniToggleButton(
-                selected: viewMode == _AccommodationViewMode.list,
-                icon: Icons.view_agenda_rounded,
-                onTap: () => onChangedView(_AccommodationViewMode.list),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: border,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
-            ],
-          ),
+              child: Row(
+                children: [
+                  _MiniToggleButton(
+                    selected: viewMode == _AccommodationViewMode.grid,
+                    icon: Icons.grid_view_rounded,
+                    onTap: () => onChangedView(_AccommodationViewMode.grid),
+                  ),
+                  _MiniToggleButton(
+                    selected: viewMode == _AccommodationViewMode.list,
+                    icon: Icons.view_agenda_rounded,
+                    onTap: () => onChangedView(_AccommodationViewMode.list),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -447,9 +657,16 @@ class _PremiumHeader extends StatelessWidget {
 
 class _HotelGridCard extends StatelessWidget {
   final Map<String, dynamic> data;
+  final double? distance;
   final VoidCallback onTap;
+  final String Function(double?)? formatDistance;
 
-  const _HotelGridCard({required this.data, required this.onTap});
+  const _HotelGridCard({
+    required this.data,
+    required this.onTap,
+    this.distance,
+    this.formatDistance,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -457,6 +674,9 @@ class _HotelGridCard extends StatelessWidget {
     final vicinity = (data['vicinity'] as String?)?.trim() ?? '';
     final rating = _toDouble(data['rating']);
     final reviews = _toInt(data['user_ratings_total']);
+    final distanceText = formatDistance != null
+        ? formatDistance!(distance)
+        : '';
 
     final imageUrl = _bestImageUrl(data);
 
@@ -491,8 +711,11 @@ class _HotelGridCard extends StatelessWidget {
                     : CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: const Color(0xFFF1F5F9)),
+                        placeholder: (_, __) => Shimmer.fromColors(
+                          baseColor: Colors.grey.shade200,
+                          highlightColor: Colors.grey.shade100,
+                          child: Container(color: Colors.white),
+                        ),
                         errorWidget: (_, __, ___) =>
                             _ImageFallback(title: name),
                       ),
@@ -500,7 +723,7 @@ class _HotelGridCard extends StatelessWidget {
             ),
 
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -516,7 +739,7 @@ class _HotelGridCard extends StatelessWidget {
                       letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       _Stars(rating: rating),
@@ -544,7 +767,7 @@ class _HotelGridCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   if (vicinity.isNotEmpty)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -558,7 +781,7 @@ class _HotelGridCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             vicinity,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
@@ -570,11 +793,32 @@ class _HotelGridCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 10),
+                  if (distanceText.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.near_me_rounded,
+                          size: 14,
+                          color: Color(0xFF3B82F6),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          distanceText,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF3B82F6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 8,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4F46E5),
@@ -590,7 +834,7 @@ class _HotelGridCard extends StatelessWidget {
                         ),
                         SizedBox(width: 6),
                         Text(
-                          'Open website',
+                          'Open in Maps',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
@@ -612,9 +856,16 @@ class _HotelGridCard extends StatelessWidget {
 
 class _HotelListCard extends StatelessWidget {
   final Map<String, dynamic> data;
+  final double? distance;
   final VoidCallback onTap;
+  final String Function(double?)? formatDistance;
 
-  const _HotelListCard({required this.data, required this.onTap});
+  const _HotelListCard({
+    required this.data,
+    required this.onTap,
+    this.distance,
+    this.formatDistance,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -623,6 +874,9 @@ class _HotelListCard extends StatelessWidget {
     final rating = _toDouble(data['rating']);
     final reviews = _toInt(data['user_ratings_total']);
     final imageUrl = _bestImageUrl(data);
+    final distanceText = formatDistance != null
+        ? formatDistance!(distance)
+        : '';
 
     return InkWell(
       onTap: onTap,
@@ -652,8 +906,11 @@ class _HotelListCard extends StatelessWidget {
                     : CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: const Color(0xFFF1F5F9)),
+                        placeholder: (_, __) => Shimmer.fromColors(
+                          baseColor: Colors.grey.shade200,
+                          highlightColor: Colors.grey.shade100,
+                          child: Container(color: Colors.white),
+                        ),
                         errorWidget: (_, __, ___) =>
                             _ImageFallback(title: name),
                       ),
@@ -724,6 +981,27 @@ class _HotelListCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                  if (distanceText.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.near_me_rounded,
+                          size: 14,
+                          color: Color(0xFF3B82F6),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          distanceText,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF3B82F6),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -958,16 +1236,19 @@ int _toInt(dynamic v) {
 }
 
 /// Best-effort image selection.
-/// If you store `photoUrl`, this will use it.
-/// (Your current sheet shows `photo_references`, but those need a Google API key
-/// to convert to a real photo URL, so we cannot reliably build that here.)
+/// Prioritizes cachedPhotoUrl from Firebase Storage
 String? _bestImageUrl(Map<String, dynamic> data) {
+  // First priority: cached photo URL from Firebase Storage
+  final cachedUrl = (data['cachedPhotoUrl'] as String?)?.trim();
+  if (cachedUrl != null && cachedUrl.isNotEmpty) return cachedUrl;
+
+  // Second priority: photoUrl field
   final photoUrl = (data['photoUrl'] as String?)?.trim();
   if (photoUrl != null && photoUrl.isNotEmpty) return photoUrl;
 
+  // Third priority: imageUrl field
   final image = (data['imageUrl'] as String?)?.trim();
   if (image != null && image.isNotEmpty) return image;
 
-  // If you later store computed photo URLs, add more keys here.
   return null;
 }

@@ -1,14 +1,22 @@
 const admin = require("firebase-admin");
-admin.initializeApp();
-
 const Stripe = require("stripe");
+const axios = require("axios");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 
-// ✅ Secrets (stored in Google Secret Manager)
+// Initialize Firebase Admin (only once)
+admin.initializeApp();
+
+// ==========================================
+// ✅ SECRETS (Google Secret Manager)
+// ==========================================
 const STRIPE_SECRET = defineSecret("STRIPE_SECRET");
 const STRIPE_WEBHOOK_SECRET = defineSecret("STRIPE_WEBHOOK_SECRET");
+const GOOGLE_API_KEY = defineSecret("GOOGLE_API_KEY");
 
+// ==========================================
+// HELPER FUNCTIONS
+// ==========================================
 function toPence(amountGbp) {
   return Math.round(Number(amountGbp) * 100);
 }
@@ -21,10 +29,54 @@ function getFunctionsBaseUrl() {
 }
 
 /**
- * Callable: createCheckoutSession
- * Input: { bookingId }
- * Output: { url, sessionId }
+ * Make Firestore input safe:
+ * - trim whitespace/newlines
+ * - remove surrounding quotes
+ * - if it's a URL, extract photo_reference
+ * - if it contains photo_reference=..., extract it
  */
+function normalizePhotoReference(input) {
+  if (input == null) return null;
+
+  let s = String(input).trim();
+
+  // Strip surrounding quotes if stored like "...."
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+
+  // If it's a URL, extract photo_reference
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const pr = u.searchParams.get("photo_reference");
+      if (pr) return pr.trim();
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // If it contains photo_reference=... somewhere inside
+  const m = s.match(/photo_reference=([^&\s]+)/i);
+  if (m && m[1]) {
+    try {
+      return decodeURIComponent(m[1]).trim();
+    } catch (_) {
+      return m[1].trim();
+    }
+  }
+
+  return s;
+}
+
+// ==========================================
+// STRIPE PAYMENT FUNCTIONS
+// ==========================================
+
 exports.createCheckoutSession = onCall(
   { region: "us-central1", secrets: [STRIPE_SECRET] },
   async (request) => {
@@ -42,7 +94,6 @@ exports.createCheckoutSession = onCall(
 
     const booking = bookingSnap.data() || {};
 
-    // ✅ Your booking docs use userId (not user_uid)
     if (booking.userId !== uid) {
       throw new HttpsError("permission-denied", "Not your booking.");
     }
@@ -51,7 +102,6 @@ exports.createCheckoutSession = onCall(
       throw new HttpsError("failed-precondition", "Booking not pending payment.");
     }
 
-    // Optional expiry check
     const expiresAt =
       booking.expiresAt && typeof booking.expiresAt.toDate === "function"
         ? booking.expiresAt.toDate()
@@ -90,7 +140,6 @@ exports.createCheckoutSession = onCall(
     const unitAmount = toPence(hourlyRate);
     const totalAmountPence = toPence(hourlyRate * hours);
 
-    // ✅ Snapshot pricing into booking (server-side truth)
     await bookingRef.update({
       hourlyRateSnapshot: hourlyRate,
       totalAmountSnapshot: totalAmountPence / 100,
@@ -100,7 +149,6 @@ exports.createCheckoutSession = onCall(
 
     const title = String(space.title || "Private Parking");
 
-    // ✅ No Firebase Hosting needed. We return to our Cloud Function endpoints.
     const base = getFunctionsBaseUrl();
     const successUrl = `${base}/stripeSuccess?bookingId=${encodeURIComponent(bookingId)}`;
     const cancelUrl = `${base}/stripeCancel?bookingId=${encodeURIComponent(bookingId)}`;
@@ -142,12 +190,6 @@ exports.createCheckoutSession = onCall(
   }
 );
 
-/**
- * Stripe Webhook
- * IMPORTANT:
- * - Stripe endpoint must be: https://us-central1-event-discrovery-app.cloudfunctions.net/stripeWebhook
- * - Secret must match the webhook signing secret from Stripe for that endpoint.
- */
 exports.stripeWebhook = onRequest(
   { region: "us-central1", secrets: [STRIPE_SECRET, STRIPE_WEBHOOK_SECRET] },
   async (req, res) => {
@@ -203,11 +245,6 @@ exports.stripeWebhook = onRequest(
   }
 );
 
-/**
- * Success + Cancel return endpoints.
- * These are used by Stripe after payment.
- * We redirect to a custom scheme that the WebView intercepts and closes.
- */
 exports.stripeSuccess = onRequest({ region: "us-central1" }, async (req, res) => {
   const bookingId = String(req.query.bookingId || "");
   const redirectUrl = `eventdiscovery://payment-success?bookingId=${encodeURIComponent(bookingId)}`;
@@ -219,3 +256,239 @@ exports.stripeCancel = onRequest({ region: "us-central1" }, async (req, res) => 
   const redirectUrl = `eventdiscovery://payment-cancel?bookingId=${encodeURIComponent(bookingId)}`;
   res.redirect(303, redirectUrl);
 });
+
+// ==========================================
+// ✅ RESTAURANT PHOTO CACHING FUNCTIONS
+// ==========================================
+
+exports.cacheRestaurantPhoto = onCall(
+  { region: "us-central1", secrets: [GOOGLE_API_KEY] },
+  async (request) => {
+    try {
+      const { photoReference, restaurantId } = request.data;
+
+      if (!photoReference || !restaurantId) {
+        throw new HttpsError("invalid-argument", "photoReference and restaurantId are required");
+      }
+
+      const bucket = admin.storage().bucket();
+      const fileName = `restaurant_photos/${restaurantId}.jpg`;
+      const file = bucket.file(fileName);
+
+      const [exists] = await file.exists();
+      if (exists) {
+        await file.makePublic();
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+        return { photoUrl: publicUrl, cached: true, message: "Photo already cached" };
+      }
+
+      const apiKey = GOOGLE_API_KEY.value();
+
+      // Normalize stored value
+      const normalized = normalizePhotoReference(photoReference);
+      const actualPhotoRef = await getPhotoReferenceFromPlaceId(normalized);
+
+      if (!actualPhotoRef) {
+        throw new HttpsError("failed-precondition", "No valid photo reference available.");
+      }
+
+      const safePhotoRef = encodeURIComponent(String(actualPhotoRef).trim());
+
+      const googleUrl =
+        `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800` +
+        `&photo_reference=${safePhotoRef}` +
+        `&key=${encodeURIComponent(apiKey)}`;
+
+      console.log(`Downloading image from Google Places API for ${restaurantId}...`);
+      const response = await axios.get(googleUrl, {
+        responseType: "arraybuffer",
+        timeout: 15000,
+        maxRedirects: 5,
+        validateStatus: () => true, // we'll handle status
+      });
+
+      if (response.status >= 400) {
+        const snippet = Buffer.from(response.data || "").toString("utf8").slice(0, 200);
+        console.error(`Google photo error ${response.status} for ${restaurantId}: ${snippet}`);
+        throw new Error(`Google HTTP ${response.status}`);
+      }
+
+      await file.save(Buffer.from(response.data), {
+        metadata: {
+          contentType: "image/jpeg",
+          cacheControl: "public, max-age=31536000",
+        },
+      });
+
+      await file.makePublic();
+
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+      await admin.firestore().collection("Dining_wembley").doc(restaurantId).update({
+        cachedPhotoUrl: publicUrl,
+        photoReferenceActual: String(actualPhotoRef).trim(),
+        photoCachedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { photoUrl: publicUrl, cached: false, message: "Photo successfully cached" };
+    } catch (error) {
+      console.error("Error caching photo:", error);
+      throw new HttpsError("internal", `Failed to cache photo: ${error.message}`);
+    }
+  }
+);
+
+exports.batchCacheRestaurantPhotos = onRequest(
+  { region: "us-central1", secrets: [GOOGLE_API_KEY] },
+  async (req, res) => {
+    try {
+      const snapshot = await admin
+        .firestore()
+        .collection("Dining_wembley")
+        .where("photoReference", "!=", null)
+        .get();
+
+      let successCount = 0;
+      let errorCount = 0;
+      let skippedCount = 0;
+      const errors = [];
+
+      const promises = snapshot.docs.map(async (doc) => {
+        const data = doc.data();
+
+        if (data.cachedPhotoUrl) {
+          skippedCount++;
+          return;
+        }
+
+        try {
+          const result = await cachePhotoInternal(data.photoReference, doc.id);
+          if (result.success) successCount++;
+          else {
+            errorCount++;
+            errors.push({ id: doc.id, reason: result.error || "unknown" });
+          }
+        } catch (err) {
+          errorCount++;
+          errors.push({ id: doc.id, reason: err?.message || "exception" });
+        }
+      });
+
+      await Promise.all(promises);
+
+      res.json({
+        total: snapshot.size,
+        success: successCount,
+        errors: errorCount,
+        skipped: skippedCount,
+        message: "Batch caching completed",
+        errorSamples: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Batch caching error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+async function getPhotoReferenceFromPlaceId(value) {
+  const apiKey = GOOGLE_API_KEY.value();
+  const raw = value == null ? "" : String(value);
+
+  // Normalize again here for safety
+  let clean = raw.trim().replace(/^google:/, "");
+
+  // If it doesn't look like a Place ID, assume it's already a photo reference
+  if (!clean.startsWith("ChIJ")) {
+    const pr = normalizePhotoReference(clean);
+    return pr ? pr.trim() : null;
+  }
+
+  // Place Details -> photos[0].photo_reference
+  try {
+    const detailsUrl =
+      `https://maps.googleapis.com/maps/api/place/details/json` +
+      `?place_id=${encodeURIComponent(clean)}` +
+      `&fields=photos` +
+      `&key=${encodeURIComponent(apiKey)}`;
+
+    const response = await axios.get(detailsUrl, {
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      console.error(`Place Details HTTP ${response.status} for ${clean}`);
+      return null;
+    }
+
+    if (response.data.status === "OK" && response.data.result?.photos?.length > 0) {
+      return response.data.result.photos[0].photo_reference;
+    }
+
+    console.log(`No photos for Place ID ${clean}, status=${response.data.status}`);
+    return null;
+  } catch (error) {
+    console.error(`Error fetching place details: ${error.message}`);
+    return null;
+  }
+}
+
+async function cachePhotoInternal(photoReferenceInput, restaurantId) {
+  try {
+    const bucket = admin.storage().bucket();
+    const fileName = `restaurant_photos/${restaurantId}.jpg`;
+    const file = bucket.file(fileName);
+
+    const [exists] = await file.exists();
+    if (exists) return { success: true, cached: true };
+
+    const normalized = normalizePhotoReference(photoReferenceInput);
+    const actualPhotoRef = await getPhotoReferenceFromPlaceId(normalized);
+
+    if (!actualPhotoRef) {
+      return { success: false, error: "No photo available" };
+    }
+
+    const apiKey = GOOGLE_API_KEY.value();
+    const safePhotoRef = encodeURIComponent(String(actualPhotoRef).trim());
+
+    const googleUrl =
+      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800` +
+      `&photo_reference=${safePhotoRef}` +
+      `&key=${encodeURIComponent(apiKey)}`;
+
+    const response = await axios.get(googleUrl, {
+      responseType: "arraybuffer",
+      timeout: 15000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+      const snippet = Buffer.from(response.data || "").toString("utf8").slice(0, 200);
+      return { success: false, error: `Google HTTP ${response.status}: ${snippet}` };
+    }
+
+    await file.save(Buffer.from(response.data), {
+      metadata: {
+        contentType: "image/jpeg",
+        cacheControl: "public, max-age=31536000",
+      },
+    });
+
+    await file.makePublic();
+
+    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+    await admin.firestore().collection("Dining_wembley").doc(restaurantId).update({
+      cachedPhotoUrl: publicUrl,
+      photoReferenceActual: String(actualPhotoRef).trim(),
+      photoCachedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { success: true, cached: false };
+  } catch (error) {
+    return { success: false, error: error?.message || "unknown error" };
+  }
+}

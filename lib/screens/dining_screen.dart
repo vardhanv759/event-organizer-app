@@ -25,6 +25,7 @@ class DiningPlace {
   final String? photoUrl;
   final String? website;
   final List<String>? photos;
+  final bool isPromoted; // For future use (e.g., sponsored listings)
 
   DiningPlace({
     required this.id,
@@ -45,6 +46,7 @@ class DiningPlace {
     this.photoUrl,
     this.website,
     this.photos,
+    this.isPromoted = false,
   });
 
   factory DiningPlace.fromFirestore(DocumentSnapshot doc) {
@@ -102,9 +104,10 @@ class DiningPlace {
       cuisine: getString(['cuisine', 'cuisineType']),
       openNow: getBool(['openNow', 'open_now']),
       photoReference: getString(['photoReference', 'photo_reference']),
-      photoUrl: getString(['photoUrl']),
+      photoUrl: getString(['cachedPhotoUrl']),
       website: getString(['website']),
       photos: (data['photos'] as List?)?.cast<String>(),
+      isPromoted: getBool(['isPromoted', 'is_promoted']) ?? false,
     );
   }
 
@@ -129,7 +132,15 @@ class DiningPlace {
 }
 
 class AdvancedDiningScreen extends StatefulWidget {
-  const AdvancedDiningScreen({super.key});
+  // Parameters for auto-showing restaurant detail from search
+  final String? autoShowRestaurantId;
+  final Map<String, dynamic>? autoShowRestaurantData;
+
+  const AdvancedDiningScreen({
+    super.key,
+    this.autoShowRestaurantId,
+    this.autoShowRestaurantData,
+  });
 
   @override
   State<AdvancedDiningScreen> createState() => _AdvancedDiningScreenState();
@@ -279,6 +290,8 @@ class _RestaurantFavoriteButtonState extends State<_RestaurantFavoriteButton> {
 class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final PageController _promoPageController =
+      PageController(); // For promotional slider
 
   Position? _currentPosition;
   bool _locationDenied = false;
@@ -287,27 +300,45 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   String? _selectedCuisine;
   int? _selectedPriceLevel;
   double? _minRating;
-  String _sortBy = 'distance'; // distance, rating, name
+  String _sortBy = 'distance'; // distance, rating, name, price_low, price_high
 
   // Nearby filter is opt-in to avoid "blank list" when location is enabled.
   bool _nearbyOnly = false;
   double _nearbyRadiusKm = 5.0;
 
-  // UI: Grid/List toggle
-  bool _isGridView = true;
-
   @override
   void initState() {
     super.initState();
     // ✅ Important: request location after first frame (prevents occasional build timing issues)
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initLocation());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initLocation();
+
+      // Auto-show restaurant detail if data is provided from search
+      if (widget.autoShowRestaurantId != null &&
+          widget.autoShowRestaurantData != null) {
+        _autoShowRestaurantDetail();
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _promoPageController.dispose();
     super.dispose();
+  }
+
+  // Helper method to determine grid columns based on screen size
+  int _getGridCrossAxisCount() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 900) {
+      return 4; // Tablets in landscape
+    } else if (screenWidth >= 600) {
+      return 3; // Tablets in portrait or large phones
+    } else {
+      return 2; // Regular phones
+    }
   }
 
   Future<void> _initLocation() async {
@@ -355,6 +386,72 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     }
   }
 
+  void _autoShowRestaurantDetail() {
+    if (widget.autoShowRestaurantData == null) return;
+
+    try {
+      final data = widget.autoShowRestaurantData!;
+
+      final place = DiningPlace(
+        id: data['id']?.toString() ?? widget.autoShowRestaurantId ?? '',
+        name: data['name']?.toString() ?? 'Restaurant',
+        address: data['address']?.toString() ?? '',
+        cuisine: data['cuisine']?.toString() ?? data['types']?.toString() ?? '',
+        rating: data['rating'] is num
+            ? (data['rating'] as num).toDouble()
+            : null,
+        priceLevel: data['priceLevel'] is int
+            ? data['priceLevel'] as int
+            : data['priceLevel'] is num
+            ? (data['priceLevel'] as num).toInt()
+            : null,
+        photoUrl:
+            data['photoUrl']?.toString() ??
+            data['photoReference']?.toString() ??
+            '',
+        phone: data['phone']?.toString() ?? '',
+        website: data['website']?.toString() ?? '',
+        latitude: data['latitude'] is num
+            ? (data['latitude'] as num).toDouble()
+            : data['lat'] is num
+            ? (data['lat'] as num).toDouble()
+            : 51.5560,
+        longitude: data['longitude'] is num
+            ? (data['longitude'] as num).toDouble()
+            : data['lng'] is num
+            ? (data['lng'] as num).toDouble()
+            : -0.2795,
+        openNow: data['openNow'] as bool?,
+        placeId: data['placeId']?.toString() ?? data['place_id']?.toString(),
+        source: data['source']?.toString() ?? 'search',
+        userRatingsTotal: data['userRatingsTotal'] is int
+            ? data['userRatingsTotal'] as int
+            : null,
+        types: data['types']?.toString(),
+        photoReference: data['photoReference']?.toString(),
+        photos: data['photos'] is List
+            ? (data['photos'] as List).map((e) => e.toString()).toList()
+            : null,
+      );
+
+      final distance = data['distance'] is num
+          ? (data['distance'] as num).toDouble()
+          : _distanceFromUser(place);
+
+      _showRestaurantDetails(place, distance);
+    } catch (e) {
+      debugPrint('Error auto-showing restaurant: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load restaurant details'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
   double? _distanceFromUser(DiningPlace place) {
     if (_currentPosition == null ||
         place.latitude == null ||
@@ -367,6 +464,13 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
       place.latitude!,
       place.longitude!,
     );
+  }
+
+  String _formatDistance(double? meters) {
+    if (meters == null) return '';
+    const metersToMiles = 0.000621371;
+    final miles = meters * metersToMiles;
+    return '${miles.toStringAsFixed(1)} mi';
   }
 
   Future<void> _openInMaps(DiningPlace place) async {
@@ -637,8 +741,9 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
             .collection('Dining_wembley')
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return _buildErrorState(snapshot.error.toString());
+          }
           if (!snapshot.hasData) return _buildPremiumLoading();
 
           final docs = snapshot.data!.docs;
@@ -713,10 +818,21 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                 return a.place.name.toLowerCase().compareTo(
                   b.place.name.toLowerCase(),
                 );
+              case 'price_low':
+                final pa = a.place.priceLevel ?? 999;
+                final pb = b.place.priceLevel ?? 999;
+                return pa.compareTo(pb);
+              case 'price_high':
+                final pa = a.place.priceLevel ?? -1;
+                final pb = b.place.priceLevel ?? -1;
+                return pb.compareTo(pa);
               default:
                 return 0;
             }
           });
+
+          // Get promoted places for the banner
+          final promotedPlaces = places.where((p) => p.isPromoted).toList();
 
           return RefreshIndicator(
             onRefresh: () async => _initLocation(),
@@ -727,6 +843,14 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
               ),
               slivers: [
                 _buildPremiumSliverAppBar(context),
+                // Promotional Slider - only shows if there are promoted restaurants
+                if (promotedPlaces.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: _buildPromotionalSlider(promotedPlaces),
+                    ),
+                  ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
@@ -752,33 +876,19 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                 else
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 110),
-                    sliver: _isGridView
-                        ? SliverGrid(
-                            key: const PageStorageKey('dining_grid'),
-                            delegate: SliverChildBuilderDelegate(
-                              (ctx, index) =>
-                                  _buildPremiumGridCard(entries[index]),
-                              childCount: entries.length,
-                            ),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                  childAspectRatio:
-                                      0.67, // ✅ reduces extra bottom space safely
-                                ),
-                          )
-                        : SliverList(
-                            key: const PageStorageKey('dining_list'),
-                            delegate: SliverChildBuilderDelegate(
-                              (ctx, index) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _buildPremiumListCard(entries[index]),
-                              ),
-                              childCount: entries.length,
-                            ),
-                          ),
+                    sliver: SliverGrid(
+                      key: const PageStorageKey('dining_grid'),
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, index) => _buildPremiumGridCard(entries[index]),
+                        childCount: entries.length,
+                      ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: _getGridCrossAxisCount(),
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.67,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -795,14 +905,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
       expandedHeight: 220,
       backgroundColor: const Color(0xFFF8F9FF),
       elevation: 0,
-      title: const Text(
-        'Dining',
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.2,
-          color: Color(0xFF0F172A),
-        ),
-      ),
       actions: [
         IconButton(
           tooltip: 'Filters',
@@ -820,6 +922,159 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
             setState(() => _searchQuery = '');
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildPromotionalSlider(List<DiningPlace> promotedPlaces) {
+    // Responsive height for promotional banner
+    final screenWidth = MediaQuery.of(context).size.width;
+    final promoHeight = (screenWidth - 32) * 0.45; // 45% of available width
+
+    return SizedBox(
+      height: promoHeight.clamp(140.0, 180.0), // Min 140, Max 180
+      child: PageView.builder(
+        controller: _promoPageController,
+        itemCount: promotedPlaces.length,
+        itemBuilder: (context, index) {
+          final place = promotedPlaces[index];
+          final distance = _distanceFromUser(place);
+
+          return GestureDetector(
+            onTap: () => _showRestaurantDetails(place, distance),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: _buildRestaurantImage(
+                      place,
+                      height: promoHeight.clamp(140.0, 180.0),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.1),
+                          Colors.black.withOpacity(0.7),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBBF24),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.star_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'PROMOTED',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          place.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            if (place.rating != null) ...[
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 14,
+                                color: Color(0xFFFBBF24),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                place.rating!.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            if (distance != null) ...[
+                              const Icon(
+                                Icons.place_rounded,
+                                size: 14,
+                                color: Colors.white70,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _formatDistance(distance),
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -885,10 +1140,54 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          _LayoutToggle(
-            isGrid: _isGridView,
-            onGrid: () => setState(() => _isGridView = true),
-            onList: () => setState(() => _isGridView = false),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _sortBy,
+                icon: const Icon(Icons.sort_rounded, size: 18),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'distance',
+                    child: Text(
+                      'Distance',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'price_low',
+                    child: Text(
+                      'Low to High',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'price_high',
+                    child: Text(
+                      'High to Low',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _sortBy = v);
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -933,14 +1232,18 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   Widget _buildActiveFiltersChips() {
     final active = <String>[];
 
-    if (_selectedPriceLevel != null)
+    if (_selectedPriceLevel != null) {
       active.add('Price: ${'\$' * _selectedPriceLevel!}');
-    if (_minRating != null)
+    }
+    if (_minRating != null) {
       active.add('Rating: ${_minRating!.toStringAsFixed(1)}+');
-    if (_nearbyOnly)
+    }
+    if (_nearbyOnly) {
       active.add('Nearby: ${_nearbyRadiusKm.toStringAsFixed(1)}km');
-    if (_sortBy != 'distance')
+    }
+    if (_sortBy != 'distance') {
       active.add('Sort: ${_sortBy[0].toUpperCase()}${_sortBy.substring(1)}');
+    }
 
     if (active.isEmpty) return const SizedBox.shrink();
 
@@ -981,6 +1284,12 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     final dist = entry.distanceMeters;
     final distKm = dist != null ? (dist / 1000.0) : null;
 
+    // Calculate responsive image height based on screen width
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardWidth =
+        (screenWidth - 44) / 2; // 44 = 16 left + 16 right + 12 gap
+    final imageHeight = cardWidth * 0.55; // Consistent aspect ratio
+
     return InkWell(
       onTap: () => _showRestaurantDetails(place, dist),
       borderRadius: BorderRadius.circular(18),
@@ -1000,14 +1309,14 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image + badges
+            // Image + badges - using responsive height
             SizedBox(
-              height: 96,
+              height: imageHeight,
               width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildRestaurantImage(place, height: 96),
+                  _buildRestaurantImage(place, height: imageHeight),
 
                   Container(
                     decoration: BoxDecoration(
@@ -1034,6 +1343,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                         'rating': place.rating,
                         'priceLevel': place.priceLevel,
                         'photoUrl': place.photoUrl ?? place.photoReference,
+                        'website': place.website,
                       },
                     ),
                   ),
@@ -1099,35 +1409,46 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                   const SizedBox(height: 8),
 
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (place.rating != null) ...[
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 16,
-                          color: Color(0xFFF59E0B),
+                      Flexible(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (place.rating != null) ...[
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 16,
+                                color: Color(0xFFF59E0B),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                place.rating!.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              if (place.userRatingsTotal != null) ...[
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    '(${place.userRatingsTotal})',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF64748B),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          place.rating!.toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        if (place.userRatingsTotal != null) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '(${place.userRatingsTotal})',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF64748B),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ],
-                      const Spacer(),
+                      ),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(
                             Icons.place_rounded,
@@ -1136,9 +1457,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                           ),
                           const SizedBox(width: 3),
                           Text(
-                            distKm != null
-                                ? '${distKm.toStringAsFixed(1)} km'
-                                : '—',
+                            dist != null ? _formatDistance(dist) : '—',
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF334155),
@@ -1180,176 +1499,34 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     );
   }
 
-  // -------------------- PREMIUM LIST CARD (unchanged; list can safely use flex) --------------------
-  Widget _buildPremiumListCard(_PlaceEntry entry) {
-    final place = entry.place;
-    final dist = entry.distanceMeters;
-    final distKm = dist != null ? (dist / 1000.0) : null;
-
-    return InkWell(
-      onTap: () => _showRestaurantDetails(place, dist),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 128,
-              height: 120,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildRestaurantImage(place, height: 120),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.00),
-                          Colors.black.withOpacity(0.30),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                  ),
-                  if (place.hasHighRating)
-                    const Positioned(
-                      top: 10,
-                      left: 10,
-                      child: _MiniBadge(icon: Icons.star_rounded, text: '4.5+'),
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      place.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                        letterSpacing: -0.2,
-                        height: 1.15,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        if ((place.cuisine ?? '').trim().isNotEmpty)
-                          _Tag(text: place.cuisine!.trim()),
-                        const SizedBox(width: 8),
-                        if (place.priceLevel != null)
-                          _Tag(text: place.getPriceDisplay()),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.place_rounded,
-                              size: 16,
-                              color: Color(0xFFEF4444),
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              distKm != null
-                                  ? '${distKm.toStringAsFixed(1)} km'
-                                  : '—',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF334155),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        if (place.rating != null) ...[
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Color(0xFFF59E0B),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            place.rating!.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          if (place.userRatingsTotal != null) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              '(${place.userRatingsTotal})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF64748B),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ],
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF111827),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Text(
-                            'View',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildRestaurantImage(DiningPlace place, {double height = 140}) {
     final url = (place.photoUrl ?? '').trim();
     if (url.isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: url,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: height,
-        placeholder: (_, __) => _buildImagePlaceholder(height),
-        errorWidget: (_, __, ___) => _buildImageFallback(height),
+      return ClipRect(
+        child: CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: height,
+          alignment:
+              Alignment.center, // Center-crop to potentially hide watermarks
+          placeholder: (_, __) => _buildImagePlaceholder(height),
+          errorWidget: (_, __, ___) => _buildImageFallback(height),
+          imageBuilder: (context, imageProvider) => Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: imageProvider,
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                // Slight color adjustment to reduce watermark visibility
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withOpacity(0.02),
+                  BlendMode.darken,
+                ),
+              ),
+            ),
+          ),
+        ),
       );
     }
     return _buildImageFallback(height);
@@ -1398,7 +1575,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
           backgroundColor: const Color(0xFFF8F9FF),
           elevation: 0,
           title: const Text(
-            'Dining',
+            '',
             style: TextStyle(
               fontWeight: FontWeight.w900,
               color: Color(0xFF0F172A),
@@ -1507,86 +1684,6 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
         child: Text(
           'Error: $error',
           style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
-    );
-  }
-}
-
-class _LayoutToggle extends StatelessWidget {
-  final bool isGrid;
-  final VoidCallback onGrid;
-  final VoidCallback onList;
-
-  const _LayoutToggle({
-    required this.isGrid,
-    required this.onGrid,
-    required this.onList,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          _ToggleIcon(
-            selected: isGrid,
-            icon: Icons.grid_view_rounded,
-            onTap: onGrid,
-          ),
-          _ToggleIcon(
-            selected: !isGrid,
-            icon: Icons.view_list_rounded,
-            onTap: onList,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToggleIcon extends StatelessWidget {
-  final bool selected;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _ToggleIcon({
-    required this.selected,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 10,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
-        ),
-        child: Icon(
-          icon,
-          color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
         ),
       ),
     );
@@ -1704,7 +1801,7 @@ class _DiningHeroHeader extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 56, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1715,11 +1812,10 @@ class _DiningHeroHeader extends StatelessWidget {
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.8,
-                  height: 1.05,
+                  height: 2.0,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Spacer(),
+              const SizedBox(height: 60),
               _HeroSearchBar(
                 controller: controller,
                 onChanged: onChanged,

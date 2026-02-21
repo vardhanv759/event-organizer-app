@@ -5,6 +5,24 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Premium London White + Gen-Z Energy (Indigo)
+class _AppUi {
+  static const Color bg = Color(0xFFFBFBFD);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFEEF0F6);
+
+  static const Color primary = Color(0xFF4C6EF5); // Electric Indigo
+  static const Color primaryDark = Color(0xFF364FC7);
+  static const Color muted = Color(0xFF667085);
+
+  static const Color text = Color(0xFF0B1220);
+  static const Color danger = Color(0xFFFF6B6B);
+  static const Color success = Color(0xFF10B981);
+
+  static const Color googleBlue = Color(0xFF4285F4);
+  static const Color appleBlack = Color(0xFF000000);
+}
+
 enum EmailAuthMode { login, register }
 
 class LoginScreen extends StatefulWidget {
@@ -309,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen>
             Expanded(child: Text(message)),
           ],
         ),
-        backgroundColor: const Color(0xFFFF6B6B),
+        backgroundColor: _AppUi.danger,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -339,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen>
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                    colors: [_AppUi.primary, _AppUi.primaryDark],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -351,7 +369,7 @@ class _LoginScreenState extends State<LoginScreen>
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Color(0xFF7C3AED).withOpacity(0.15),
+                        color: Colors.white.withOpacity(0.18),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -496,9 +514,7 @@ class _LoginScreenState extends State<LoginScreen>
                                               ),
                                             ],
                                           ),
-                                          backgroundColor: const Color(
-                                            0xFF10B981,
-                                          ),
+                                          backgroundColor: _AppUi.success,
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
@@ -519,9 +535,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             e.message ??
                                                 'Failed to send reset email',
                                           ),
-                                          backgroundColor: const Color(
-                                            0xFFFF6B6B,
-                                          ),
+                                          backgroundColor: _AppUi.danger,
                                           behavior: SnackBarBehavior.floating,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
@@ -538,7 +552,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF667EEA),
+                              foregroundColor: _AppUi.primary,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -551,7 +565,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                        Color(0xFF667EEA),
+                                        _AppUi.primary,
                                       ),
                                     ),
                                   )
@@ -594,7 +608,7 @@ class _LoginScreenState extends State<LoginScreen>
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF6366F1),
+              primary: _AppUi.primary,
               onPrimary: Colors.white,
               surface: Colors.white,
             ),
@@ -622,7 +636,7 @@ class _LoginScreenState extends State<LoginScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(color: Colors.white),
+        decoration: const BoxDecoration(color: _AppUi.bg),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -675,13 +689,13 @@ class _LoginScreenState extends State<LoginScreen>
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  Color(0xFF7C3AED).withOpacity(0.2),
-                  Color(0xFF7C3AED).withOpacity(0.1),
+                  _AppUi.primary.withOpacity(0.20),
+                  _AppUi.primary.withOpacity(0.10),
                 ],
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
+                  color: Colors.black.withOpacity(0.12),
                   blurRadius: 30,
                   offset: const Offset(0, 15),
                 ),
@@ -691,12 +705,12 @@ class _LoginScreenState extends State<LoginScreen>
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withOpacity(0.25),
               ),
               child: const Icon(
                 Icons.event_available_rounded,
                 size: 48,
-                color: Color(0xFF7C3AED),
+                color: _AppUi.primary,
               ),
             ),
           ),
@@ -707,7 +721,7 @@ class _LoginScreenState extends State<LoginScreen>
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.w900,
-            color: Color(0xFF7C3AED),
+            color: _AppUi.primary,
             letterSpacing: -0.8,
           ),
         ),
@@ -716,7 +730,7 @@ class _LoginScreenState extends State<LoginScreen>
           'Find events, parking & food nearby',
           style: TextStyle(
             fontSize: 14,
-            color: Color(0xFF64748B),
+            color: _AppUi.muted,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.3,
           ),
@@ -728,9 +742,9 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildGlassmorphicCard() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _AppUi.surface,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+        border: Border.all(color: _AppUi.border, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -799,15 +813,13 @@ class _LoginScreenState extends State<LoginScreen>
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         gradient: isSelected
-            ? const LinearGradient(
-                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-              )
+            ? const LinearGradient(colors: [_AppUi.primary, _AppUi.primaryDark])
             : null,
         borderRadius: BorderRadius.circular(12),
         boxShadow: isSelected
             ? [
                 BoxShadow(
-                  color: const Color(0xFF667EEA).withOpacity(0.4),
+                  color: _AppUi.primary.withOpacity(0.35),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -869,9 +881,9 @@ class _LoginScreenState extends State<LoginScreen>
         child: Container(
           height: 56,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _AppUi.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+            border: Border.all(color: _AppUi.border, width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.05),
@@ -887,9 +899,7 @@ class _LoginScreenState extends State<LoginScreen>
                     width: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Color(0xFF7C3AED),
-                      ),
+                      valueColor: AlwaysStoppedAnimation<Color>(_AppUi.primary),
                     ),
                   ),
                 )
@@ -905,7 +915,7 @@ class _LoginScreenState extends State<LoginScreen>
                       child: const Icon(
                         Icons.g_mobiledata_rounded,
                         size: 24,
-                        color: Color(0xFF4285F4),
+                        color: _AppUi.googleBlue,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -914,7 +924,7 @@ class _LoginScreenState extends State<LoginScreen>
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF0F172A),
+                        color: _AppUi.text,
                         letterSpacing: 0.3,
                       ),
                     ),
@@ -947,7 +957,7 @@ class _LoginScreenState extends State<LoginScreen>
         child: Container(
           height: 56,
           decoration: BoxDecoration(
-            color: const Color(0xFF000000),
+            color: _AppUi.appleBlack,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -1051,19 +1061,19 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildDivider() {
     return Row(
       children: [
-        Expanded(child: Container(height: 1, color: const Color(0xFFE2E8F0))),
+        Expanded(child: Container(height: 1, color: _AppUi.border)),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16),
           child: Text(
             'or continue with email',
             style: TextStyle(
               fontSize: 12,
-              color: Color(0xFF94A3B8),
+              color: _AppUi.muted,
               fontWeight: FontWeight.w600,
             ),
           ),
         ),
-        Expanded(child: Container(height: 1, color: const Color(0xFFE2E8F0))),
+        Expanded(child: Container(height: 1, color: _AppUi.border)),
       ],
     );
   }
@@ -1118,7 +1128,7 @@ class _LoginScreenState extends State<LoginScreen>
               child: const Text(
                 'Forgot Password?',
                 style: TextStyle(
-                  color: Color(0xFF7C3AED),
+                  color: _AppUi.primary,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   decoration: TextDecoration.underline,
@@ -1208,10 +1218,11 @@ class _LoginScreenState extends State<LoginScreen>
             label: 'Password',
             icon: Icons.lock_outline,
             obscureText: !_regPasswordVisible,
+            // ✅ UI-only fix: was white on white; now visible
             suffixIcon: IconButton(
               icon: Icon(
                 _regPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                color: Colors.white.withOpacity(0.7),
+                color: const Color(0xFF64748B),
                 size: 20,
               ),
               onPressed: () {
@@ -1234,12 +1245,13 @@ class _LoginScreenState extends State<LoginScreen>
             label: 'Confirm Password',
             icon: Icons.lock_reset_outlined,
             obscureText: !_regConfirmPasswordVisible,
+            // ✅ UI-only fix: was white on white; now visible
             suffixIcon: IconButton(
               icon: Icon(
                 _regConfirmPasswordVisible
                     ? Icons.visibility_off
                     : Icons.visibility,
-                color: Colors.white.withOpacity(0.7),
+                color: const Color(0xFF64748B),
                 size: 20,
               ),
               onPressed: () {
@@ -1280,9 +1292,9 @@ class _LoginScreenState extends State<LoginScreen>
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _AppUi.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+        border: Border.all(color: _AppUi.border, width: 1.5),
       ),
       child: TextFormField(
         controller: controller,
@@ -1292,14 +1304,14 @@ class _LoginScreenState extends State<LoginScreen>
         keyboardType: keyboardType,
         validator: validator,
         style: const TextStyle(
-          color: Color(0xFF0F172A),
+          color: _AppUi.text,
           fontSize: 15,
           fontWeight: FontWeight.w600,
         ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
-          prefixIcon: Icon(icon, color: const Color(0xFF7C3AED), size: 22),
+          labelStyle: const TextStyle(color: _AppUi.muted, fontSize: 14),
+          prefixIcon: Icon(icon, color: _AppUi.primary, size: 22),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
@@ -1321,12 +1333,12 @@ class _LoginScreenState extends State<LoginScreen>
       height: 56,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+          colors: [_AppUi.primary, _AppUi.primaryDark],
         ),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF7C3AED).withOpacity(0.3),
+            color: _AppUi.primary.withOpacity(0.25),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -1351,11 +1363,7 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 20,
-                  color: Colors.white,
-                ),
+                Icon(icon, size: 20, color: Colors.white),
               ],
             ),
           ),
@@ -1368,8 +1376,9 @@ class _LoginScreenState extends State<LoginScreen>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: _AppUi.primary.withOpacity(0.06),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _AppUi.border),
       ),
       child: Column(
         children: [
@@ -1398,19 +1407,19 @@ class _LoginScreenState extends State<LoginScreen>
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
+            color: _AppUi.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 18, color: Colors.white),
+          child: Icon(icon, size: 18, color: _AppUi.primary),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
-              color: Colors.white.withOpacity(0.95),
-              fontWeight: FontWeight.w500,
+              color: _AppUi.text,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -1425,11 +1434,11 @@ class _LoginScreenState extends State<LoginScreen>
         onPressed: () {
           setState(() => _emailMode = EmailAuthMode.login);
         },
-        icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF7C3AED)),
+        icon: const Icon(Icons.arrow_back_rounded, color: _AppUi.primary),
         label: const Text(
           'Back to Login',
           style: TextStyle(
-            color: Color(0xFF7C3AED),
+            color: _AppUi.primary,
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
@@ -1446,7 +1455,7 @@ class _LoginScreenState extends State<LoginScreen>
           const Text(
             'New user? ',
             style: TextStyle(
-              color: Color(0xFF64748B),
+              color: _AppUi.muted,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -1463,7 +1472,7 @@ class _LoginScreenState extends State<LoginScreen>
             child: const Text(
               'Register here',
               style: TextStyle(
-                color: Color(0xFF7C3AED),
+                color: _AppUi.primary,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
                 decoration: TextDecoration.underline,
@@ -1476,13 +1485,9 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildFooter() {
-    return Text(
+    return const Text(
       'By continuing, you agree to our Terms & Privacy Policy',
-      style: const TextStyle(
-        fontSize: 11,
-        color: Color(0xFF94A3B8),
-        height: 1.5,
-      ),
+      style: TextStyle(fontSize: 11, color: _AppUi.muted, height: 1.5),
       textAlign: TextAlign.center,
     );
   }
@@ -1497,7 +1502,7 @@ class _LoginScreenState extends State<LoginScreen>
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+              colors: [_AppUi.primary, _AppUi.primaryDark],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -1544,7 +1549,7 @@ class _LoginScreenState extends State<LoginScreen>
                   onPressed: () => Navigator.of(context).pop(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF667EEA),
+                    foregroundColor: _AppUi.primary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SavedEventsScreen extends StatefulWidget {
   const SavedEventsScreen({super.key});
@@ -50,6 +51,38 @@ class _SavedEventsScreenState extends State<SavedEventsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to remove: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openEventUrl(String url) async {
+    if (url.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No website URL available for this event'),
+            backgroundColor: Color(0xFF64748B),
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Could not launch URL';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open link: $e'),
             backgroundColor: const Color(0xFFEF4444),
           ),
         );
@@ -130,6 +163,7 @@ class _SavedEventsScreenState extends State<SavedEventsScreen> {
     final venue = eventData['venue'] ?? '';
     final category = eventData['category'] ?? '';
     final imageUrl = eventData['imageUrl'] ?? eventData['photoUrl'];
+    final eventUrl = eventData['url'] ?? '';
     final date = eventData['date'];
 
     String dateStr = '';
@@ -141,6 +175,8 @@ class _SavedEventsScreenState extends State<SavedEventsScreen> {
         dateStr = date;
       }
     }
+
+    final hasUrl = eventUrl.toString().trim().isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -155,164 +191,252 @@ class _SavedEventsScreenState extends State<SavedEventsScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image with heart button
-          if (imageUrl != null && imageUrl.toString().isNotEmpty)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(18),
-              ),
-              child: Stack(
-                children: [
-                  CachedNetworkImage(
-                    imageUrl: imageUrl.toString(),
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Shimmer.fromColors(
-                      baseColor: Colors.grey.shade200,
-                      highlightColor: Colors.grey.shade100,
-                      child: Container(height: 180, color: Colors.white),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      height: 180,
-                      color: Colors.grey.shade200,
-                      child: const Icon(
-                        Icons.event,
-                        size: 50,
-                        color: Colors.grey,
-                      ),
-                    ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: hasUrl ? () => _openEventUrl(eventUrl.toString()) : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Image with heart button
+              if (imageUrl != null && imageUrl.toString().isNotEmpty)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
                   ),
-                  // Heart button in top right
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Material(
-                      color: Colors.white,
-                      shape: const CircleBorder(),
-                      elevation: 4,
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () => _removeSavedEvent(eventId),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
+                  child: Stack(
+                    children: [
+                      CachedNetworkImage(
+                        imageUrl: imageUrl.toString(),
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Shimmer.fromColors(
+                          baseColor: Colors.grey.shade200,
+                          highlightColor: Colors.grey.shade100,
+                          child: Container(height: 180, color: Colors.white),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          height: 180,
+                          color: Colors.grey.shade200,
                           child: const Icon(
-                            Icons.favorite_rounded,
-                            color: Color(0xFFEF4444),
-                            size: 24,
+                            Icons.event,
+                            size: 50,
+                            color: Colors.grey,
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Date
-                if (dateStr.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.calendar_today_rounded,
-                          size: 14,
-                          color: Color(0xFF7C3AED),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          dateStr,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF7C3AED),
+                      // Heart button in top right
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Material(
+                          color: Colors.white,
+                          shape: const CircleBorder(),
+                          elevation: 4,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _removeSavedEvent(eventId),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              child: const Icon(
+                                Icons.favorite_rounded,
+                                color: Color(0xFFEF4444),
+                                size: 24,
+                              ),
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 12),
-
-                // Title
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.3,
+                      ),
+                      // External link indicator
+                      if (hasUrl)
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C3AED),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.open_in_new_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
 
-                // Venue and category
-                Row(
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (venue.isNotEmpty) ...[
-                      const Icon(
-                        Icons.place_rounded,
-                        size: 16,
-                        color: Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          venue,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (category.isNotEmpty) ...[
-                      const SizedBox(width: 8),
+                    // Date
+                    if (dateStr.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 10,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(6),
+                          color: const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          category,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF475569),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.calendar_today_rounded,
+                              size: 14,
+                              color: Color(0xFF7C3AED),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF7C3AED),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+
+                    // Title with link icon
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.3,
+                            ),
                           ),
+                        ),
+                        if (hasUrl)
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEEF2FF),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 18,
+                              color: Color(0xFF7C3AED),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Venue and category
+                    Row(
+                      children: [
+                        if (venue.isNotEmpty) ...[
+                          const Icon(
+                            Icons.place_rounded,
+                            size: 16,
+                            color: Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              venue,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (category.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              category,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+
+                    // Tap to open hint
+                    if (hasUrl) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.touch_app_rounded,
+                              size: 14,
+                              color: Color(0xFF10B981),
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Tap to open event website',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

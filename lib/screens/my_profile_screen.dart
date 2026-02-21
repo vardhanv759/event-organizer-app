@@ -619,10 +619,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                   icon: Icons.badge_outlined,
                                   validator: (v) {
                                     final s = (v ?? '').trim();
-                                    if (s.isEmpty)
+                                    if (s.isEmpty) {
                                       return 'Name cannot be empty';
-                                    if (s.length < 2)
+                                    }
+                                    if (s.length < 2) {
                                       return 'Enter a valid name';
+                                    }
                                     return null;
                                   },
                                 ),

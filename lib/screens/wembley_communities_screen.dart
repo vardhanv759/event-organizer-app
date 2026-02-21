@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui';
 
 import '../services/zone_prompt_service.dart';
-import '../services/zone_utils.dart';
 import 'wembley_zone_hub_screen.dart';
 
 /// 🗺️ WEMBLEY COMMUNITIES - Zone Selection Screen
@@ -113,7 +112,7 @@ class WembleyCommunitiesScreen extends StatelessWidget {
                       top: -50,
                       child: Container(
                         width: 200,
-                        height: 200,
+                        height: 180,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.white.withOpacity(0.1),
@@ -199,7 +198,7 @@ class WembleyCommunitiesScreen extends StatelessWidget {
                 children: [
                   // Map Visualization
                   _MapVisualization(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
                   // Zone Cards
                   const Text(
@@ -249,7 +248,7 @@ class _MapVisualization extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 200,
+      height: 180,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),

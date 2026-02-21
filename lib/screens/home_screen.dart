@@ -9,6 +9,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'my_profile_screen.dart';
 import 'saved_events_screen.dart';
 import 'saved_restaurants_screen.dart';
+import 'search_screen.dart'; // Advanced multi-collection search
+import 'settings_screen.dart';
 
 import 'my_bookings_screen.dart';
 import 'private_parking_messages_screen.dart';
@@ -29,6 +31,18 @@ class HomeScreen extends StatefulWidget {
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeUi {
+  static const Color bg = Color(0xFFFBFBFD);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFEEF0F6);
+
+  static const Color primary = Color(0xFF4C6EF5); // Electric Indigo
+  static const Color primarySoft = Color(0xFFEEF2FF);
+
+  static const Color text = Color(0xFF0B1220);
+  static const Color textMuted = Color(0xFF667085);
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
@@ -290,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
+                    color: _HomeUi.text,
                     letterSpacing: -0.3,
                   ),
                 ),
@@ -319,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Icon(
                         Icons.info_outline_rounded,
                         size: 18,
-                        color: Color(0xFF64748B),
+                        color: _HomeUi.textMuted,
                       ),
                       SizedBox(width: 8),
                       Expanded(
@@ -327,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           'Tip: Check Spam/Junk if you don’t see it.',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF64748B),
+                            color: _HomeUi.textMuted,
                           ),
                         ),
                       ),
@@ -439,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
+                  color: _HomeUi.text,
                   letterSpacing: -0.3,
                 ),
               ),
@@ -449,7 +463,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Color(0xFF64748B),
+                  color: _HomeUi.textMuted,
                   height: 1.4,
                 ),
               ),
@@ -473,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         'Cancel',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF334155),
+                          color: _HomeUi.text,
                         ),
                       ),
                     ),
@@ -791,13 +805,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     },
                   ),
                   const SizedBox(height: 8),
-                  const _DrawerDividerLabel(label: 'Shortcuts'),
-                  const SizedBox(height: 8),
                   const _DrawerDividerLabel(label: 'Support'),
                   _DrawerTile(
                     icon: Icons.settings_rounded,
                     title: 'Settings',
-                    onTap: () => Navigator.pop(context),
+                    onTap: () {
+                      Navigator.pop(context); // Close drawer
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      );
+                    },
                   ),
                   _DrawerTile(
                     icon: Icons.help_outline_rounded,
@@ -1061,7 +1081,7 @@ class ParkingWebPlaceholder extends StatelessWidget {
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF334155),
+            color: _HomeUi.text,
             height: 1.4,
           ),
         ),
@@ -1120,24 +1140,11 @@ class ExploreTabPremium extends StatelessWidget {
           flexibleSpace: FlexibleSpaceBar(
             background: _HeroPremium(
               firstName: firstName,
-              onSearchTap: () async {
-                final result = await showSearch<_SearchHit?>(
-                  context: context,
-                  delegate: WembleySearchDelegate(),
-                );
-
-                if (result == null) return;
-
-                // TODO: wire to your detail screens (event/dining/stay)
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Selected: ${result.type} • ${result.title}'),
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    margin: const EdgeInsets.all(16),
-                  ),
+              onSearchTap: () {
+                // Navigate to advanced search screen
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
                 );
               },
             ),
@@ -1269,7 +1276,7 @@ class _PremiumNavItem extends StatelessWidget {
         duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFEEF2FF) : Colors.transparent,
+          color: isSelected ? _HomeUi.primarySoft : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -1278,9 +1285,7 @@ class _PremiumNavItem extends StatelessWidget {
             Icon(
               icon,
               size: 24,
-              color: isSelected
-                  ? const Color(0xFF4F46E5)
-                  : const Color(0xFF94A3B8),
+              color: isSelected ? _HomeUi.primary : _HomeUi.textMuted,
             ),
             const SizedBox(height: 4),
             FittedBox(
@@ -1290,9 +1295,7 @@ class _PremiumNavItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                  color: isSelected
-                      ? const Color(0xFF4F46E5)
-                      : const Color(0xFF94A3B8),
+                  color: isSelected ? _HomeUi.primary : _HomeUi.textMuted,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -1531,7 +1534,7 @@ class _SectionHeader extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
+                  color: _HomeUi.text,
                   letterSpacing: -0.4,
                   height: 1.2,
                 ),
@@ -1542,7 +1545,7 @@ class _SectionHeader extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF64748B),
+                  color: _HomeUi.textMuted,
                 ),
               ),
             ],
@@ -1552,7 +1555,7 @@ class _SectionHeader extends StatelessWidget {
           TextButton(
             onPressed: onAction,
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF4F46E5),
+              foregroundColor: _HomeUi.primary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1634,7 +1637,7 @@ class _UpcomingEventCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
+                      color: _HomeUi.text,
                       height: 1.25,
                       letterSpacing: -0.3,
                     ),
@@ -1688,7 +1691,7 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: const Color(0xFF64748B)),
+            Icon(icon, size: 14, color: _HomeUi.textMuted),
             const SizedBox(width: 6),
           ],
           Text(
@@ -1696,7 +1699,7 @@ class _Chip extends StatelessWidget {
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF334155),
+              color: _HomeUi.text,
             ),
           ),
         ],
@@ -1720,7 +1723,7 @@ class _SeeAllCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF111827), Color(0xFF334155)],
+            colors: [Color(0xFF111827), _HomeUi.text],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -1791,12 +1794,12 @@ class _EmptyUpcomingCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFEEF2FF),
+              color: _HomeUi.primarySoft,
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
               Icons.event_busy_rounded,
-              color: Color(0xFF4F46E5),
+              color: _HomeUi.primary,
               size: 24,
             ),
           ),
@@ -1807,7 +1810,7 @@ class _EmptyUpcomingCard extends StatelessWidget {
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: Color(0xFF334155),
+                color: _HomeUi.text,
                 height: 1.3,
               ),
             ),
@@ -1816,7 +1819,7 @@ class _EmptyUpcomingCard extends StatelessWidget {
           ElevatedButton(
             onPressed: onTap,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4F46E5),
+              backgroundColor: _HomeUi.primary,
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -1885,7 +1888,7 @@ class _PremiumActionGrid extends StatelessWidget {
         _ActionTile(
           label: 'Events',
           icon: Icons.event_rounded,
-          gradient: const [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+          gradient: const [_HomeUi.primary, Color(0xFF364FC7)],
           onTap: onEvents,
         ),
         _ActionTile(
@@ -1897,29 +1900,26 @@ class _PremiumActionGrid extends StatelessWidget {
         _ActionTile(
           label: 'Dining',
           icon: Icons.restaurant_rounded,
-          gradient: const [Color(0xFFF97316), Color(0xFFEF4444)],
+          gradient: const [Color(0xFFFF922B), Color(0xFFFF6B6B)],
           onTap: onDining,
         ),
         _ActionTile(
           label: 'Stay',
           icon: Icons.hotel_rounded,
-          gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+          gradient: const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
           onTap: onStay,
         ),
         _ActionTile(
           label: 'Offers',
           icon: Icons.local_offer_rounded,
-          gradient: const [
-            Color.fromARGB(255, 205, 30, 214),
-            Color.fromARGB(255, 57, 209, 115),
-          ],
+          gradient: const [Color(0xFFFF4D6D), Color(0xFFFF922B)],
           onTap: onOffers,
           badge: 'Today',
         ),
         _ActionTile(
           label: 'Plan your day (AI)',
           icon: Icons.auto_awesome_rounded,
-          gradient: const [Color(0xFF06B6D4), Color(0xFF8B5CF6)],
+          gradient: const [_HomeUi.primary, Color(0xFF8B5CF6)],
           onTap: onAi,
           badge: 'Smart',
         ),
@@ -2049,19 +2049,19 @@ class _DrawerTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFF0F172A)),
+            Icon(icon, color: _HomeUi.text),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
+                  color: _HomeUi.text,
                 ),
               ),
             ),
             if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF64748B)),
+            const Icon(Icons.chevron_right_rounded, color: _HomeUi.textMuted),
           ],
         ),
       ),
@@ -2082,7 +2082,7 @@ class _DrawerDividerLabel extends StatelessWidget {
         style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w900,
-          color: Color(0xFF94A3B8),
+          color: _HomeUi.textMuted,
           letterSpacing: 0.6,
         ),
       ),
@@ -2152,13 +2152,13 @@ class SafeNetworkAvatar extends StatelessWidget {
 
     Widget fallback() {
       return Container(
-        color: const Color(0xFFEEF2FF),
+        color: _HomeUi.primarySoft,
         alignment: Alignment.center,
         child: Text(
           _initial,
           style: TextStyle(
             fontWeight: FontWeight.w900,
-            color: const Color(0xFF4F46E5),
+            color: _HomeUi.primary,
             fontSize: radius * 0.9,
           ),
         ),
@@ -2193,10 +2193,20 @@ class SafeNetworkAvatar extends StatelessWidget {
 }
 
 // ============================================================================
-// SEARCH (Events + Dining + Accommodation)
-// NOTE: If your Dining/Accommodation uses "title" instead of "name",
-// change _diningField / _stayField below.
+// OLD SEARCH IMPLEMENTATION - REPLACED WITH search_screen.dart
 // ============================================================================
+// The search functionality has been moved to a separate file: search_screen.dart
+// This provides:
+// - Multi-collection search (Events, Dining, Accommodation)
+// - Real-time case-insensitive search
+// - Category filters
+// - Beautiful UI with detail sheets
+// - Direct navigation to specific screens
+//
+// The old implementation below is kept for reference but is no longer used.
+// ============================================================================
+
+/* OLD SEARCH CODE - NO LONGER USED
 class _SearchHit {
   final String type; // Event | Dining | Stay
   final String title;
@@ -2350,7 +2360,7 @@ class _ResultsList extends StatelessWidget {
           'Search events, dining, and stays in Wembley',
           style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: Color(0xFF64748B),
+            color: _HomeUi.textMuted,
           ),
         ),
       );
@@ -2369,7 +2379,7 @@ class _ResultsList extends StatelessWidget {
               'No results found',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF64748B),
+                color: _HomeUi.textMuted,
               ),
             ),
           );
@@ -2403,7 +2413,7 @@ class _ResultsList extends StatelessWidget {
                       height: 42,
                       width: 42,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
+                        color: const _HomeUi.primarySoft,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(icon, color: const Color(0xFF4F46E5)),
@@ -2419,7 +2429,7 @@ class _ResultsList extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF0F172A),
+                              color: _HomeUi.text,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -2431,7 +2441,7 @@ class _ResultsList extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF64748B),
+                              color: _HomeUi.textMuted,
                               fontSize: 12,
                             ),
                           ),
@@ -2440,7 +2450,7 @@ class _ResultsList extends StatelessWidget {
                     ),
                     const Icon(
                       Icons.chevron_right_rounded,
-                      color: Color(0xFF64748B),
+                      color: _HomeUi.textMuted,
                     ),
                   ],
                 ),
@@ -2452,3 +2462,4 @@ class _ResultsList extends StatelessWidget {
     );
   }
 }
+*/ // END OF OLD SEARCH CODE
