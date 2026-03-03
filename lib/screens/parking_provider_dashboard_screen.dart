@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'parking_space_register_screen.dart';
-import 'parking_space_details_screen.dart';
+import 'manage_parking_space_screen.dart';
 
 class ParkingProviderDashboardScreen extends StatelessWidget {
   const ParkingProviderDashboardScreen({super.key});
@@ -20,10 +20,6 @@ class ParkingProviderDashboardScreen extends StatelessWidget {
     }
 
     final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-    final spacesQuery = FirebaseFirestore.instance
-        .collection('parking_spaces')
-        .where('provider_uid', isEqualTo: uid);
-    // IMPORTANT: no orderBy here to avoid composite index requirement.
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FF),
@@ -62,97 +58,10 @@ class ParkingProviderDashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Expanded(
-                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: spacesQuery.snapshots(),
-                    builder: (context, snap) {
-                      if (snap.hasError) {
-                        return _ErrorBox(
-                          text:
-                              'Error loading spaces: ${snap.error}\n\nTip: If you re-add orderBy() later, Firestore may require a composite index.',
-                        );
-                      }
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      final docs = snap.data?.docs ?? [];
-
-                      // Client-side sort by created_at desc (if present)
-                      docs.sort((a, b) {
-                        final at = a.data()['created_at'];
-                        final bt = b.data()['created_at'];
-                        final aMs = (at is Timestamp)
-                            ? at.millisecondsSinceEpoch
-                            : 0;
-                        final bMs = (bt is Timestamp)
-                            ? bt.millisecondsSinceEpoch
-                            : 0;
-                        return bMs.compareTo(aMs);
-                      });
-
-                      if (docs.isEmpty) {
-                        return _EmptyState(
-                          onAdd: () {
-                            final mergedUserData = <String, dynamic>{
-                              ...userData,
-                              'uid': uid,
-                              'email': user?.email ?? '',
-                            };
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ParkingSpaceRegisterScreen(
-                                  userDoc: mergedUserData,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      }
-
-                      return ListView.separated(
-                        padding: const EdgeInsets.only(bottom: 90),
-                        itemCount: docs.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) {
-                          final doc = docs[i];
-                          final d = doc.data();
-                          final title =
-                              (d['title'] as String?)?.trim().isEmpty == false
-                              ? (d['title'] as String).trim()
-                              : 'Private parking';
-                          final postcode =
-                              (d['postcode'] as String?)?.trim() ?? '';
-                          final area =
-                              (d['approx_area'] as String?)?.trim() ??
-                              'Wembley';
-                          final hourly = (d['hourly_rate_gbp'] is num)
-                              ? (d['hourly_rate_gbp'] as num).toDouble()
-                              : 0.0;
-                          final statusText =
-                              (d['status'] as String?)?.trim() ?? 'pending';
-
-                          return _SpaceCard(
-                            title: title,
-                            subtitle: postcode.isNotEmpty
-                                ? '$postcode • $area'
-                                : area,
-                            price: '£${hourly.toStringAsFixed(2)}/hr',
-                            status: statusText,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ParkingSpaceDetailsScreen(
-                                    spaceId: doc.id,
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      );
-                    },
+                  child: _CompositeSpacesList(
+                    uid: uid,
+                    userData: userData,
+                    userEmail: user?.email ?? '',
                   ),
                 ),
               ],
@@ -160,6 +69,142 @@ class ParkingProviderDashboardScreen extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+// ✅ FIX: Composite queries for both field names
+class _CompositeSpacesList extends StatelessWidget {
+  final String uid;
+  final Map<String, dynamic> userData;
+  final String userEmail;
+
+  const _CompositeSpacesList({
+    required this.uid,
+    required this.userData,
+    required this.userEmail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final spacesRef = FirebaseFirestore.instance.collection('parking_spaces');
+
+    // ✅ Query 1: New field name (providerId)
+    final query1 = spacesRef.where('providerId', isEqualTo: uid);
+
+    // ✅ Query 2: Old field name (provider_uid)
+    final query2 = spacesRef.where('provider_uid', isEqualTo: uid);
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: query1.snapshots(),
+      builder: (context, snap1) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: query2.snapshots(),
+          builder: (context, snap2) {
+            if (snap1.hasError || snap2.hasError) {
+              return _ErrorBox(
+                text: 'Error loading spaces: ${snap1.error ?? snap2.error}',
+              );
+            }
+
+            if (snap1.connectionState == ConnectionState.waiting ||
+                snap2.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            // ✅ Merge results from both queries
+            final docs1 = snap1.data?.docs ?? [];
+            final docs2 = snap2.data?.docs ?? [];
+
+            // Deduplicate by document ID
+            final seenIds = <String>{};
+            final allDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+            for (final doc in [...docs1, ...docs2]) {
+              if (!seenIds.contains(doc.id)) {
+                seenIds.add(doc.id);
+                allDocs.add(doc);
+              }
+            }
+
+            // Sort by creation date
+            allDocs.sort((a, b) {
+              final at = a.data()['createdAt'] ?? a.data()['created_at'];
+              final bt = b.data()['createdAt'] ?? b.data()['created_at'];
+              final aMs = (at is Timestamp) ? at.millisecondsSinceEpoch : 0;
+              final bMs = (bt is Timestamp) ? bt.millisecondsSinceEpoch : 0;
+              return bMs.compareTo(aMs);
+            });
+
+            if (allDocs.isEmpty) {
+              return _EmptyState(
+                onAdd: () {
+                  final mergedUserData = <String, dynamic>{
+                    ...userData,
+                    'uid': uid,
+                    'email': userEmail,
+                  };
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ParkingSpaceRegisterScreen(userDoc: mergedUserData),
+                    ),
+                  );
+                },
+              );
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.only(bottom: 90),
+              itemCount: allDocs.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, i) {
+                final doc = allDocs[i];
+                final d = doc.data();
+
+                // Support both old and new field names
+                final title = (d['title'] as String?)?.trim().isEmpty == false
+                    ? (d['title'] as String).trim()
+                    : 'Private parking';
+                final postcode = (d['postcode'] as String?)?.trim() ?? '';
+
+                // Support approxArea, approx_area, area
+                final areaValue =
+                    d['approxArea'] ?? d['approx_area'] ?? d['area'];
+                final area = (areaValue as String?)?.trim() ?? 'Wembley';
+
+                // Support hourlyRate, hourly_rate_gbp
+                final hourlyValue = d['hourlyRate'] ?? d['hourly_rate_gbp'];
+                final hourly = (hourlyValue is num)
+                    ? hourlyValue.toDouble()
+                    : 0.0;
+
+                // Support status, status_lc
+                final statusValue = d['status'] ?? d['status_lc'];
+                final statusText =
+                    (statusValue as String?)?.trim() ?? 'pending';
+
+                return _SpaceCard(
+                  title: title,
+                  subtitle: postcode.isNotEmpty ? '$postcode • $area' : area,
+                  price: '£${hourly.toStringAsFixed(2)}/hr',
+                  status: statusText,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ManageParkingSpaceScreen(spaceId: doc.id),
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -224,12 +269,12 @@ class _TopStatusCard extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF64748B),
+                    height: 1.25,
                   ),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.shield_rounded, color: Color(0xFF64748B)),
         ],
       ),
     );

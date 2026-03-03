@@ -1204,7 +1204,7 @@ class ExploreTabPremium extends StatelessWidget {
                     return ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: docs.length + 1,
-                      separatorBuilder: (_, __) => const SizedBox(width: 14),
+                      separatorBuilder: (_, _) => const SizedBox(width: 14),
                       itemBuilder: (context, i) {
                         if (i == docs.length) {
                           return _SeeAllCard(onTap: () => onGoToTab(1));
@@ -1846,7 +1846,7 @@ class _UpcomingSkeletonRow extends StatelessWidget {
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       itemCount: 3,
-      separatorBuilder: (_, __) => const SizedBox(width: 12),
+      separatorBuilder: (_, _) => const SizedBox(width: 12),
       itemBuilder: (context, _) => Container(
         width: 260,
         decoration: BoxDecoration(
@@ -2181,7 +2181,7 @@ class SafeNetworkAvatar extends StatelessWidget {
                 key: ValueKey(effectiveUrl), // forces rebuild when URL changes
                 fit: BoxFit.cover,
                 cacheWidth: (size * 2).toInt(), // optimize for retina displays
-                errorBuilder: (_, __, ___) => fallback(),
+                errorBuilder: (_, _, _) => fallback(),
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
                   return fallback(); // show fallback while loading

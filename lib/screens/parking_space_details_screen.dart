@@ -19,31 +19,13 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
         .doc(spaceId);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FF),
-      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.white, // ✅ WHITE BACKGROUND
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        leading: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_rounded,
-              color: Color(0xFF0F172A),
-            ),
-            onPressed: () => Navigator.pop(context),
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0F172A)),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -64,87 +46,428 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
           final data = snap.data!.data()!;
           final title = (data['title'] ?? 'Parking space').toString();
           final postcode = (data['postcode'] ?? '').toString();
-          final area = (data['area'] ?? '').toString();
-          final type = (data['type'] ?? 'Driveway').toString();
-          final hourlyRate = (data['hourly_rate_gbp'] ?? 0).toDouble();
-          final statusLc = (data['status_lc'] ?? '').toString().toLowerCase();
-          final providerUid = (data['provider_uid'] ?? '').toString();
+          final area =
+              ((data['approxArea'] ?? data['approx_area'] ?? data['area']) ??
+                      '')
+                  .toString();
+          final exactAddress =
+              (data['exactAddress'] ?? data['exact_address'] ?? '').toString();
+          final type =
+              ((data['spaceType'] ?? data['space_type'] ?? data['type']) ??
+                      'Driveway')
+                  .toString();
+          final size = ((data['size'] ?? data['space_size']) ?? 'medium')
+              .toString();
+          final hourlyRateValue = data['hourlyRate'] ?? data['hourly_rate_gbp'];
+          final hourlyRate = (hourlyRateValue is num)
+              ? hourlyRateValue.toDouble()
+              : 0.0;
+          final availability = (data['availability'] ?? '24/7').toString();
+          final statusLc = ((data['status'] ?? data['status_lc']) ?? '')
+              .toString()
+              .toLowerCase();
+          final providerUid =
+              ((data['providerId'] ?? data['provider_uid']) ?? '').toString();
 
-          final isApproved = statusLc == 'approved';
+          // Amenities
+          final amenities = data['amenities'] as Map<String, dynamic>? ?? {};
+          final isCovered = amenities['covered'] ?? false;
+          final hasEVCharging = amenities['evCharging'] ?? false;
+          final hasCCTV = amenities['cctv'] ?? false;
+          final hasDisabledAccess = amenities['disabledAccess'] ?? false;
+
+          // Additional info
+          final accessInstructions = (data['accessInstructions'] ?? '')
+              .toString();
+          final vehicleRestrictions = (data['vehicleRestrictions'] ?? '')
+              .toString();
+
+          // Photos
+          final photoUrls =
+              (data['photoUrls'] ?? data['photo_urls'] ?? []) as List;
+
+          final isApproved =
+              (statusLc == 'approved' || data['approved'] == true);
 
           return Stack(
             children: [
-              // Gradient Background
-              Container(
-                height: 320,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFF6366F1),
-                      const Color(0xFF8B5CF6),
-                      const Color(0xFFA855F7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              ),
-
-              // Content
-              Column(
+              ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
                 children: [
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 100, 20, 180),
+                  // ✅ Photo Gallery
+                  if (photoUrls.isNotEmpty)
+                    _SmoothPhotoGallery(photoUrls: photoUrls),
+                  if (photoUrls.isNotEmpty) const SizedBox(height: 20),
+
+                  // Title & Location
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_rounded,
+                        color: Color(0xFF6366F1),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        [
+                          postcode,
+                          area,
+                        ].where((e) => e.trim().isNotEmpty).join(' • '),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (isApproved)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(
+                                Icons.verified_rounded,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'VERIFIED',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Price Card
+                  _WhiteCard(
+                    child: Row(
                       children: [
-                        _PremiumHeaderCard(
-                          title: title,
-                          subtitle: [
-                            postcode,
-                            area,
-                          ].where((e) => e.trim().isNotEmpty).join(' • '),
-                          typeChip: type,
-                          approved: isApproved,
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6366F1).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.attach_money_rounded,
+                            color: Color(0xFF6366F1),
+                            size: 28,
+                          ),
                         ),
-                        const SizedBox(height: 20),
-                        _GlassPriceCard(hourlyRate: hourlyRate),
-                        const SizedBox(height: 20),
-                        _ModernInfoCard(
-                          title: 'What\'s Included',
-                          icon: Icons.check_circle_rounded,
-                          iconColor: const Color(0xFF10B981),
-                          bullets: const [
-                            'Private bay/driveway space',
-                            'Verified provider (manual approval)',
-                            'Secure payment via Stripe',
-                            'Instant booking confirmation',
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        _ModernInfoCard(
-                          title: 'Safety & Security',
-                          icon: Icons.shield_rounded,
-                          iconColor: const Color(0xFF6366F1),
-                          bullets: const [
-                            'Encrypted payment processing',
-                            'Provider identity verified',
-                            'Direct messaging available',
-                            '24/7 customer support',
-                          ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Hourly Rate',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '£${hourlyRate.toStringAsFixed(2)}/hour',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
 
-                  // Bottom Floating Actions
-                  _FloatingBottomActions(
-                    hourlyRate: hourlyRate,
-                    spaceId: spaceId,
-                    spaceTitle: title,
-                    providerUid: providerUid,
-                    isApproved: isApproved,
+                  // Space Details Card
+                  _WhiteCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _SectionTitle(
+                          icon: Icons.info_outline_rounded,
+                          title: 'Space Details',
+                        ),
+                        const SizedBox(height: 16),
+                        _DetailRow(
+                          icon: Icons.category_rounded,
+                          label: 'Type',
+                          value: type.replaceAll('_', ' ').toUpperCase(),
+                        ),
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.straighten_rounded,
+                          label: 'Size',
+                          value: size[0].toUpperCase() + size.substring(1),
+                        ),
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.access_time_rounded,
+                          label: 'Availability',
+                          value: _formatAvailability(availability),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Amenities Card (if any)
+                  if (isCovered ||
+                      hasEVCharging ||
+                      hasCCTV ||
+                      hasDisabledAccess)
+                    _WhiteCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionTitle(
+                            icon: Icons.star_rounded,
+                            title: 'Amenities',
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              if (isCovered)
+                                const _AmenityChip(
+                                  icon: Icons.roofing_rounded,
+                                  label: 'Covered',
+                                ),
+                              if (hasEVCharging)
+                                const _AmenityChip(
+                                  icon: Icons.ev_station_rounded,
+                                  label: 'EV Charging',
+                                ),
+                              if (hasCCTV)
+                                const _AmenityChip(
+                                  icon: Icons.videocam_rounded,
+                                  label: 'CCTV',
+                                ),
+                              if (hasDisabledAccess)
+                                const _AmenityChip(
+                                  icon: Icons.accessible_rounded,
+                                  label: 'Accessible',
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (isCovered ||
+                      hasEVCharging ||
+                      hasCCTV ||
+                      hasDisabledAccess)
+                    const SizedBox(height: 16),
+
+                  // Location Card
+                  _WhiteCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _SectionTitle(
+                          icon: Icons.location_on_rounded,
+                          title: 'Location',
+                        ),
+                        const SizedBox(height: 16),
+                        _DetailRow(
+                          icon: Icons.pin_drop_rounded,
+                          label: 'Postcode',
+                          value: postcode,
+                        ),
+                        const SizedBox(height: 12),
+                        _DetailRow(
+                          icon: Icons.map_rounded,
+                          label: 'Area',
+                          value: area,
+                        ),
+                        if (exactAddress.isNotEmpty) const SizedBox(height: 12),
+                        if (exactAddress.isNotEmpty)
+                          _DetailRow(
+                            icon: Icons.home_rounded,
+                            label: 'Address',
+                            value: exactAddress,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Access & Restrictions (if provided)
+                  if (accessInstructions.isNotEmpty ||
+                      vehicleRestrictions.isNotEmpty)
+                    _WhiteCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionTitle(
+                            icon: Icons.info_rounded,
+                            title: 'Important Information',
+                          ),
+                          if (accessInstructions.isNotEmpty)
+                            const SizedBox(height: 16),
+                          if (accessInstructions.isNotEmpty)
+                            _InfoSection(
+                              icon: Icons.key_rounded,
+                              title: 'Access Instructions',
+                              content: accessInstructions,
+                            ),
+                          if (vehicleRestrictions.isNotEmpty &&
+                              accessInstructions.isNotEmpty)
+                            const SizedBox(height: 16),
+                          if (vehicleRestrictions.isNotEmpty)
+                            _InfoSection(
+                              icon: Icons.local_shipping_rounded,
+                              title: 'Vehicle Restrictions',
+                              content: vehicleRestrictions,
+                            ),
+                        ],
+                      ),
+                    ),
+                  if (accessInstructions.isNotEmpty ||
+                      vehicleRestrictions.isNotEmpty)
+                    const SizedBox(height: 16),
+
+                  // What's Included
+                  _WhiteCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _SectionTitle(
+                          icon: Icons.check_circle_rounded,
+                          title: 'What\'s Included',
+                        ),
+                        const SizedBox(height: 16),
+                        ...[
+                          'Private bay/driveway space',
+                          'Verified provider (manual approval)',
+                          'Secure payment via Stripe',
+                          'Instant booking confirmation',
+                        ].map(
+                          (text) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF10B981),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    text,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
+              ),
+
+              // Bottom Bar
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: StreamBuilder<String?>(
+                  stream: MessagingService.chatExistsStream(providerUid),
+                  builder: (context, chatSnap) {
+                    final existingChatId = chatSnap.data;
+
+                    if (existingChatId != null) {
+                      return _BottomBar(
+                        hourlyRate: hourlyRate,
+                        chatIcon: Icons.chat_rounded,
+                        onChatPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PrivateParkingChatScreen(
+                                chatId: existingChatId,
+                                otherUid: providerUid,
+                              ),
+                            ),
+                          );
+                        },
+                        isApproved: isApproved,
+                        spaceId: spaceId,
+                        spaceTitle: title,
+                        providerUid: providerUid,
+                      );
+                    }
+
+                    return StreamBuilder<Map<String, dynamic>?>(
+                      stream: MessagingService.requestStatusStream(
+                        otherUid: providerUid,
+                        contextType: 'private_parking',
+                        contextRefId: spaceId,
+                      ),
+                      builder: (context, reqSnap) {
+                        final requestData = reqSnap.data;
+                        final requestStatus = requestData?['status'] as String?;
+
+                        if (requestStatus == 'pending') {
+                          return _PendingRequestBottomBar(
+                            hourlyRate: hourlyRate,
+                            requestId: requestData!['requestId'] as String,
+                            isApproved: isApproved,
+                            spaceId: spaceId,
+                            spaceTitle: title,
+                            providerUid: providerUid,
+                          );
+                        }
+
+                        return _RequestChatBottomBar(
+                          hourlyRate: hourlyRate,
+                          providerUid: providerUid,
+                          isApproved: isApproved,
+                          spaceId: spaceId,
+                          spaceTitle: title,
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
             ],
           );
@@ -152,159 +475,127 @@ class ParkingSpaceDetailsScreen extends StatelessWidget {
       ),
     );
   }
+
+  String _formatAvailability(String availability) {
+    switch (availability) {
+      case '24/7':
+        return '24/7 (Always Available)';
+      case 'weekdays_only':
+        return 'Weekdays Only (Mon-Fri)';
+      case 'weekends_only':
+        return 'Weekends Only (Sat-Sun)';
+      case 'event_days_only':
+        return 'Event Days Only';
+      default:
+        return availability;
+    }
+  }
 }
 
 // ============================================================================
-// PREMIUM HEADER CARD (Glassmorphic)
+// SMOOTH PHOTO GALLERY
 // ============================================================================
 
-class _PremiumHeaderCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String typeChip;
-  final bool approved;
+class _SmoothPhotoGallery extends StatefulWidget {
+  final List photoUrls;
+  const _SmoothPhotoGallery({required this.photoUrls});
 
-  const _PremiumHeaderCard({
-    required this.title,
-    required this.subtitle,
-    required this.typeChip,
-    required this.approved,
-  });
+  @override
+  State<_SmoothPhotoGallery> createState() => _SmoothPhotoGalleryState();
+}
+
+class _SmoothPhotoGalleryState extends State<_SmoothPhotoGallery> {
+  late PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.3),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 30,
-                offset: const Offset(0, 15),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.4),
-                        width: 2,
-                      ),
-                    ),
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          SizedBox(
+            height: 240,
+            child: PageView.builder(
+              controller: _pageController,
+              physics: const BouncingScrollPhysics(),
+              onPageChanged: (index) => setState(() => _currentPage = index),
+              itemCount: widget.photoUrls.length,
+              itemBuilder: (context, index) {
+                return Image.network(
+                  widget.photoUrls[index].toString(),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: const Color(0xFFF1F5F9),
                     child: const Icon(
                       Icons.local_parking_rounded,
-                      color: Colors.white,
-                      size: 36,
+                      color: Color(0xFF6366F1),
+                      size: 60,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.3,
-                            shadows: [
-                              Shadow(color: Colors.black26, blurRadius: 8),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  _GlassChip(label: typeChip, icon: Icons.apartment_rounded),
-                  const SizedBox(width: 10),
-                  _GlassChip(
-                    label: approved ? 'Verified' : 'Pending',
-                    icon: approved
-                        ? Icons.verified_rounded
-                        : Icons.pending_rounded,
-                    color: approved
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFFF59E0B),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color? color;
-
-  const _GlassChip({required this.label, required this.icon, this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: (color ?? Colors.white).withOpacity(0.25),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: (color ?? Colors.white).withOpacity(0.4),
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.3,
+                );
+              },
             ),
           ),
+          if (widget.photoUrls.length > 1)
+            Positioned(
+              bottom: 12,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.photoUrls.length,
+                  (index) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: _currentPage == index ? 24 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _currentPage == index
+                          ? Colors.white
+                          : Colors.white.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (widget.photoUrls.length > 1)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_currentPage + 1}/${widget.photoUrls.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -312,138 +603,12 @@ class _GlassChip extends StatelessWidget {
 }
 
 // ============================================================================
-// GLASS PRICE CARD
+// WHITE CARD COMPONENT
 // ============================================================================
 
-class _GlassPriceCard extends StatelessWidget {
-  final double hourlyRate;
-  const _GlassPriceCard({required this.hourlyRate});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.8),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withOpacity(0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF6366F1).withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.payments_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Hourly Rate',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF64748B),
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Pay per hour',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF10B981), Color(0xFF059669)],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF10B981).withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  '£${hourlyRate.toStringAsFixed(2)}/hr',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// MODERN INFO CARD
-// ============================================================================
-
-class _ModernInfoCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color iconColor;
-  final List<String> bullets;
-
-  const _ModernInfoCard({
-    required this.title,
-    required this.icon,
-    required this.iconColor,
-    required this.bullets,
-  });
+class _WhiteCard extends StatelessWidget {
+  final Widget child;
+  const _WhiteCard({required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -451,74 +616,171 @@ class _ModernInfoCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  const _SectionTitle({required this.icon, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF6366F1).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: const Color(0xFF6366F1), size: 20),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF94A3B8), size: 18),
+        const SizedBox(width: 10),
+        Text(
+          '$label:',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AmenityChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _AmenityChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6366F1).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF6366F1), size: 16),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF6366F1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String content;
+  const _InfoSection({
+    required this.icon,
+    required this.title,
+    required this.content,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: iconColor, size: 24),
-              ),
-              const SizedBox(width: 12),
+              Icon(icon, color: const Color(0xFF6366F1), size: 18),
+              const SizedBox(width: 8),
               Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF0F172A),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          ...bullets.map(
-            (bullet) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 2),
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: iconColor.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.check_rounded,
-                      color: iconColor,
-                      size: 14,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      bullet,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF334155),
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 8),
+          Text(
+            content,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+              height: 1.4,
             ),
           ),
         ],
@@ -528,121 +790,128 @@ class _ModernInfoCard extends StatelessWidget {
 }
 
 // ============================================================================
-// SMART FLOATING BOTTOM ACTIONS WITH CHAT REQUEST FLOW
+// BOTTOM BAR
 // ============================================================================
 
-class _FloatingBottomActions extends StatelessWidget {
+class _BottomBar extends StatelessWidget {
   final double hourlyRate;
+  final IconData chatIcon;
+  final VoidCallback? onChatPressed;
+  final bool isApproved;
   final String spaceId;
   final String spaceTitle;
   final String providerUid;
-  final bool isApproved;
 
-  const _FloatingBottomActions({
+  const _BottomBar({
     required this.hourlyRate,
+    required this.chatIcon,
+    required this.onChatPressed,
+    required this.isApproved,
     required this.spaceId,
     required this.spaceTitle,
     required this.providerUid,
-    required this.isApproved,
   });
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final myUid = user?.uid ?? '';
-
-    // Check if user can message
-    final canMessage =
-        providerUid.isNotEmpty && myUid.isNotEmpty && providerUid != myUid;
-
-    if (!canMessage) {
-      // Static bottom bar (no messaging)
-      return _buildBottomBar(
-        context,
-        hourlyRate: hourlyRate,
-        chatIcon: Icons.chat_bubble_rounded,
-        chatLabel: 'Chat',
-        chatColor: Colors.grey,
-        onChatPressed: null,
-        isApproved: isApproved,
-        spaceId: spaceId,
-        spaceTitle: spaceTitle,
-        providerUid: providerUid,
-      );
-    }
-
-    // Smart bottom bar with chat request flow
-    return StreamBuilder<String?>(
-      stream: MessagingService.chatExistsStream(providerUid),
-      builder: (context, chatSnap) {
-        final existingChatId = chatSnap.data;
-
-        if (existingChatId != null) {
-          // Chat exists - show chat button
-          return _buildBottomBar(
-            context,
-            hourlyRate: hourlyRate,
-            chatIcon: Icons.chat_bubble_rounded,
-            chatLabel: 'Chat',
-            chatColor: const Color(0xFF10B981), // Green
-            onChatPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PrivateParkingChatScreen(
-                    chatId: existingChatId,
-                    otherUid: providerUid,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            // ✅ FIXED: Message Icon Only
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FF),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFF6366F1).withOpacity(0.3),
+                  width: 2,
+                ),
+              ),
+              child: IconButton(
+                icon: Icon(chatIcon, color: const Color(0xFF6366F1)),
+                onPressed: onChatPressed,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: isApproved
+                    ? () async {
+                        final user = FirebaseAuth.instance.currentUser;
+                        if (user == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please sign in to book.'),
+                            ),
+                          );
+                          return;
+                        }
+                        // Open booking modal (from original code)
+                        await showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => _PremiumBookingSheet(
+                            spaceId: spaceId,
+                            spaceTitle: spaceTitle,
+                            hourlyRate: hourlyRate,
+                            providerUid: providerUid,
+                          ),
+                        );
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-              );
-            },
-            isApproved: isApproved,
-            spaceId: spaceId,
-            spaceTitle: spaceTitle,
-            providerUid: providerUid,
-          );
-        }
-
-        // No chat exists - check request status
-        return StreamBuilder<Map<String, dynamic>?>(
-          stream: MessagingService.requestStatusStream(
-            otherUid: providerUid,
-            contextType: 'private_parking',
-            contextRefId: spaceId,
-          ),
-          builder: (context, reqSnap) {
-            final requestData = reqSnap.data;
-            final status = requestData?['status'] as String?;
-
-            if (status == 'pending') {
-              // Request pending
-              return _PendingRequestBottomBar(
-                hourlyRate: hourlyRate,
-                requestId: requestData!['requestId'] as String,
-                isApproved: isApproved,
-                spaceId: spaceId,
-                spaceTitle: spaceTitle,
-                providerUid: providerUid,
-              );
-            }
-
-            // No request - show request button
-            return _RequestChatBottomBar(
-              hourlyRate: hourlyRate,
-              providerUid: providerUid,
-              isApproved: isApproved,
-              spaceId: spaceId,
-              spaceTitle: spaceTitle,
-            );
-          },
-        );
-      },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isApproved
+                          ? Icons.event_available_rounded
+                          : Icons.lock_rounded,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      isApproved ? 'Book Now' : 'Not Available',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
-
-// ============================================================================
-// PENDING REQUEST BOTTOM BAR
 // ============================================================================
 
 class _PendingRequestBottomBar extends StatefulWidget {
@@ -798,91 +1067,93 @@ Widget _buildBottomBar(
   required String providerUid,
 }) {
   return Container(
-    margin: const EdgeInsets.all(20),
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(28),
       boxShadow: [
         BoxShadow(
           color: Colors.black.withOpacity(0.1),
-          blurRadius: 30,
-          offset: const Offset(0, -10),
+          blurRadius: 10,
+          offset: const Offset(0, -2),
         ),
       ],
     ),
     child: SafeArea(
       top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.local_parking_rounded,
-                color: Color(0xFF6366F1),
-                size: 24,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '£${hourlyRate.toStringAsFixed(2)}/hour',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-            ],
+          // ✅ Message Icon Only (no text!)
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FF),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: chatColor.withOpacity(0.3), width: 2),
+            ),
+            child: IconButton(
+              icon: Icon(chatIcon, color: chatColor),
+              onPressed: onChatPressed,
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _ModernButton(
-                  onPressed: onChatPressed,
-                  icon: chatIcon,
-                  label: chatLabel,
-                  isSecondary: false,
-                  buttonColor: chatColor,
+          const SizedBox(width: 12),
+          // Book Now Button
+          Expanded(
+            child: ElevatedButton(
+              onPressed: isApproved
+                  ? () async {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please sign in to book.'),
+                          ),
+                        );
+                        return;
+                      }
+                      await showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => _PremiumBookingSheet(
+                          spaceId: spaceId,
+                          spaceTitle: spaceTitle,
+                          hourlyRate: hourlyRate,
+                          providerUid: providerUid,
+                        ),
+                      );
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: _ModernButton(
-                  onPressed: isApproved
-                      ? () async {
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please sign in to book.'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          await showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (_) => _PremiumBookingSheet(
-                              spaceId: spaceId,
-                              spaceTitle: spaceTitle,
-                              hourlyRate: hourlyRate,
-                              providerUid: providerUid,
-                            ),
-                          );
-                        }
-                      : null,
-                  icon: isApproved
-                      ? Icons.event_available_rounded
-                      : Icons.lock_rounded,
-                  label: isApproved ? 'Book Now' : 'Not Available',
-                  isSecondary: false,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isApproved
+                        ? Icons.event_available_rounded
+                        : Icons.lock_rounded,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    isApproved ? 'Book Now' : 'Not Available',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),

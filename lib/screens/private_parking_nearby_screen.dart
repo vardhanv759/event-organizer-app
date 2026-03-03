@@ -134,7 +134,7 @@ class _PrivateParkingNearbyScreenState
 
                   return ListView.separated(
                     itemCount: approved.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final d = approved[i];
                       return _SpaceListTilePremium(
@@ -443,7 +443,7 @@ class _LoadingSkeleton extends StatelessWidget {
         mainAxisSpacing: 12,
         childAspectRatio: 0.92,
       ),
-      itemBuilder: (_, __) => Container(
+      itemBuilder: (_, _) => Container(
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.6),
           borderRadius: BorderRadius.circular(18),

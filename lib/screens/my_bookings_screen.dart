@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 🎨 Premium My Bookings Screen
 /// Shows all user's parking bookings with beautiful UI
@@ -576,10 +577,12 @@ class _BookingCard extends StatelessWidget {
                       height: 48,
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          Navigator.pushNamed(
+                          // ✅ NEW: Show popup instead of navigating
+                          _showSpaceDetailsPopup(
                             context,
-                            '/parking-space-details',
-                            arguments: spaceId,
+                            spaceId: spaceId,
+                            startAt: startAt,
+                            hours: hours,
                           );
                         },
                         icon: const Icon(Icons.location_on_rounded),
@@ -606,6 +609,376 @@ class _BookingCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  static void _showSpaceDetailsPopup(
+    BuildContext context, {
+    required String spaceId,
+    required DateTime? startAt,
+    required int hours,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) =>
+          _SpaceDetailsPopup(spaceId: spaceId, startAt: startAt, hours: hours),
+    );
+  }
+}
+
+class _SpaceDetailsPopup extends StatelessWidget {
+  final String spaceId;
+  final DateTime? startAt;
+  final int hours;
+
+  const _SpaceDetailsPopup({
+    required this.spaceId,
+    this.startAt,
+    required this.hours,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('parking_spaces')
+          .doc(spaceId)
+          .get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.5,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data?.data() == null) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.5,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            child: const Center(child: Text('Space not found')),
+          );
+        }
+
+        final spaceData = snapshot.data!.data() as Map<String, dynamic>;
+        final address = spaceData['exactAddress'] ?? 'Address not available';
+        final postcode = spaceData['postcode'] ?? '';
+        final spaceType = spaceData['spaceType'] ?? 'Parking Space';
+        final size = spaceData['size'] ?? 'Standard';
+        final lat = spaceData['latitude'] as double?;
+        final lng = spaceData['longitude'] as double?;
+
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.5,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: Column(
+            children: [
+              // Drag handle
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 20),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.local_parking_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          const Expanded(
+                            child: Text(
+                              'Space Details',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Details Container
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FF),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFF6366F1).withOpacity(0.2),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            // Time Slot
+                            _DetailRow(
+                              icon: Icons.access_time_rounded,
+                              label: 'Time Slot',
+                              value: startAt != null
+                                  ? DateFormat(
+                                      'MMM dd, yyyy\nHH:mm',
+                                    ).format(startAt!)
+                                  : 'N/A',
+                              color: const Color(0xFF6366F1),
+                            ),
+                            const Divider(height: 24),
+
+                            // Hours Booked
+                            _DetailRow(
+                              icon: Icons.schedule_rounded,
+                              label: 'Hours Booked',
+                              value: '$hours ${hours == 1 ? "hour" : "hours"}',
+                              color: const Color(0xFF8B5CF6),
+                            ),
+                            const Divider(height: 24),
+
+                            // Space Type
+                            _DetailRow(
+                              icon: Icons.category_rounded,
+                              label: 'Space Type',
+                              value: spaceType,
+                              color: const Color(0xFF0EA5E9),
+                            ),
+                            const Divider(height: 24),
+
+                            // Size
+                            _DetailRow(
+                              icon: Icons.straighten_rounded,
+                              label: 'Size',
+                              value: size,
+                              color: const Color(0xFF10B981),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Location Container
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFEEF2FF), Color(0xFFFDF4FF)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFF6366F1).withOpacity(0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6366F1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.location_on_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Location',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              address,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF475569),
+                                height: 1.5,
+                              ),
+                            ),
+                            if (postcode.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                postcode,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF6366F1),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Bottom Button
+              if (lat != null && lng != null)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _openInGoogleMaps(lat, lng),
+                        icon: const Icon(Icons.map_rounded, size: 24),
+                        label: const Text(
+                          'Open in Google Maps',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<void> _openInGoogleMaps(double lat, double lng) async {
+    final url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      print('Error opening Google Maps: $e');
+    }
+  }
+}
+
+// Helper widget for detail rows
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

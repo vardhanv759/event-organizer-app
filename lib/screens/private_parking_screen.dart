@@ -50,7 +50,7 @@ class PrivateParkingScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
             children: [
               _BigRowButton(
-                title: 'Register your private parking space',
+                title: 'Become a Host',
                 subtitle: status == 'approved'
                     ? 'Manage your spaces and add new listings.'
                     : 'Earn money by renting your driveway/bay.',
@@ -91,7 +91,7 @@ class PrivateParkingScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _BigRowButton(
-                title: 'Private parking nearby',
+                title: 'Find Parking nearby',
                 subtitle: 'Browse and book private spaces around Wembley.',
                 icon: Icons.location_on_rounded,
                 gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
@@ -121,7 +121,7 @@ class PrivateParkingScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14), // ✅ FIX: spacing added here
               _BigRowButton(
-                title: 'Wembley Communities',
+                title: 'Community Hub',
                 subtitle: 'Join your local zone and connect.',
                 icon: Icons.location_city_rounded,
                 gradient: const [Color(0xFFEC4899), Color(0xFF8B5CF6)],

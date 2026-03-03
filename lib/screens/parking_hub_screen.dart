@@ -22,6 +22,24 @@ class ParkingHubScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
         child: Column(
           children: [
+            // FIRST: Private Parking
+            _BigActionCard(
+              title: 'Private Parking',
+              subtitle: 'Book local private spaces or list yours.',
+              icon: Icons.home_work_rounded,
+              gradient: const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              badge: 'New',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PrivateParkingScreen(userData: userData),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            // SECOND: Paid Parking
             _BigActionCard(
               title: 'Paid Parking',
               subtitle: 'Car parks, tariffs, and walking distance.',
@@ -41,38 +59,6 @@ class ParkingHubScreen extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) => MapScreen(userData: userData),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            _BigActionCard(
-              title: 'Free Parking Zones',
-              subtitle: 'Discover free zones and restrictions.',
-              icon: Icons.park_rounded,
-              gradient: const [Color(0xFF111827), Color(0xFF334155)],
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const _ComingSoonScreen(title: 'Free Parking Zones'),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            _BigActionCard(
-              title: 'Private Parking',
-              subtitle: 'Book local private spaces or list yours.',
-              icon: Icons.home_work_rounded,
-              gradient: const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-              badge: 'New',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PrivateParkingScreen(userData: userData),
                   ),
                 );
               },

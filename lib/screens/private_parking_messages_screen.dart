@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/messaging_service.dart';
-import '../services/zone_prompt_service.dart';
 import 'private_parking_chat_screen.dart';
-import 'zone_chat_screen.dart';
 
 class PrivateParkingMessagesScreen extends StatelessWidget {
   const PrivateParkingMessagesScreen({super.key});
@@ -58,10 +56,7 @@ class PrivateParkingMessagesScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ✅ NEW: Public Chats row at top
-            _PublicChatsSection(myUid: myUid),
-            const SizedBox(height: 24),
-
+            // ✅ REMOVED: Public Chats section (community messaging)
             _IncomingRequestsSection(myUid: myUid),
             const SizedBox(height: 24),
             _OutgoingRequestsSection(myUid: myUid),
@@ -76,295 +71,6 @@ class PrivateParkingMessagesScreen extends StatelessWidget {
 
 /* -------------------------------------------------------------------------- */
 /*                            PUBLIC CHATS (NEW)                              */
-/* -------------------------------------------------------------------------- */
-
-class _PublicChatsSection extends StatelessWidget {
-  final String myUid;
-  const _PublicChatsSection({required this.myUid});
-
-  static const _zones = <Map<String, String>>[
-    {'id': 'wembley_ne', 'name': 'Wembley NE'},
-    {'id': 'wembley_se', 'name': 'Wembley SE'},
-    {'id': 'wembley_sw', 'name': 'Wembley SW'},
-    {'id': 'wembley_nw', 'name': 'Wembley NW'},
-  ];
-
-  Future<void> _openOrPromptJoin(
-    BuildContext context, {
-    required String zoneId,
-    required String zoneName,
-  }) async {
-    // 1) If already a member -> open chat
-    final memberDoc = await FirebaseFirestore.instance
-        .collection('zones')
-        .doc(zoneId)
-        .collection('members')
-        .doc(myUid)
-        .get();
-
-    if (memberDoc.exists) {
-      if (!context.mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ZoneChatScreen(zoneId: zoneId, zoneName: zoneName),
-        ),
-      );
-      return;
-    }
-
-    // 2) If user previously rejected -> never ask again
-    final decision = await ZonePromptService.getDecisionForZone(zoneId);
-    if (decision == 'rejected') {
-      if (!context.mounted) return;
-      _toast(context, 'You chose not to join $zoneName (won’t ask again).');
-      return;
-    }
-
-    // 3) Ask user to join
-    if (!context.mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                "Join $zoneName public chat?",
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                "Chat with local parking providers and see updates in this Wembley zone.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        await ZonePromptService.setDecision(
-                          zoneId: zoneId,
-                          decision: 'rejected',
-                        );
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                      child: const Text("No, don’t ask again"),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final u = FirebaseAuth.instance.currentUser;
-                        final displayName =
-                            (u?.displayName?.trim().isNotEmpty ?? false)
-                            ? u!.displayName!.trim()
-                            : 'User';
-                        final photoUrl =
-                            (u?.photoURL?.trim().isNotEmpty ?? false)
-                            ? u!.photoURL!.trim()
-                            : '';
-
-                        await ZonePromptService.joinZone(
-                          zoneId: zoneId,
-                          displayName: displayName,
-                          photoUrl: photoUrl,
-                        );
-
-                        if (!context.mounted) return;
-                        Navigator.pop(context);
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ZoneChatScreen(
-                              zoneId: zoneId,
-                              zoneName: zoneName,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4F46E5),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: const Text("Join"),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionTitle('Public Chats (Wembley)'),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 110,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _zones.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, i) {
-              final zoneId = _zones[i]['id']!;
-              final zoneName = _zones[i]['name']!;
-
-              return _ZoneCard(
-                myUid: myUid,
-                zoneId: zoneId,
-                zoneName: zoneName,
-                onTap: () => _openOrPromptJoin(
-                  context,
-                  zoneId: zoneId,
-                  zoneName: zoneName,
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ZoneCard extends StatelessWidget {
-  final String myUid;
-  final String zoneId;
-  final String zoneName;
-  final VoidCallback onTap;
-
-  const _ZoneCard({
-    required this.myUid,
-    required this.zoneId,
-    required this.zoneName,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final memberRef = FirebaseFirestore.instance
-        .collection('zones')
-        .doc(zoneId)
-        .collection('members')
-        .doc(myUid);
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: memberRef.snapshots(),
-      builder: (context, snap) {
-        final isMember = snap.data?.exists ?? false;
-
-        return GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 210,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFEEF2FF), Color(0xFFFDF4FF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFF6366F1).withOpacity(0.18),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF6366F1).withOpacity(0.08),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  height: 46,
-                  width: 46,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4F46E5),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.public_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        zoneName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        isMember
-                            ? 'Tap to open chat'
-                            : 'Not joined (tap to join)',
-                        style: TextStyle(
-                          color: isMember
-                              ? const Color(0xFF10B981)
-                              : const Color(0xFF64748B),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFF64748B),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
 /* -------------------------------------------------------------------------- */
 /*                            NOTIFICATION BADGE                              */
 /* -------------------------------------------------------------------------- */
@@ -832,47 +538,234 @@ class _ChatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: ListTile(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  PrivateParkingChatScreen(chatId: chatId, otherUid: otherUid),
-            ),
-          );
-        },
-        leading: CircleAvatar(
-          backgroundColor: unread
-              ? const Color(0xFF4F46E5)
-              : const Color(0xFFCBD5E1),
-          child: const Icon(Icons.person, color: Colors.white),
-        ),
-        title: _UserName(uid: otherUid),
-        subtitle: Text(
-          lastMessage.isEmpty ? 'Say hi 👋' : lastMessage,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: unread
-            ? Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF4F46E5),
-                  shape: BoxShape.circle,
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .snapshots(),
+      builder: (context, chatSnap) {
+        final chatData = chatSnap.data?.data() as Map<String, dynamic>? ?? {};
+        final lastSenderId = chatData['last_sender_id']?.toString() ?? '';
+        final lastMessageAt = chatData['last_message_at'] as Timestamp?;
+
+        return Material(
+          // ✅ NEW: Light purple background for unread
+          color: unread ? const Color(0xFFF8F9FF) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () async {
+              // ✅ NEW: Auto-mark as read when opening
+              if (unread) {
+                await MessagingService.markChatRead(chatId);
+              }
+
+              if (context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PrivateParkingChatScreen(
+                      chatId: chatId,
+                      otherUid: otherUid,
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: unread
+                      ? const Color(0xFF6366F1).withOpacity(0.2)
+                      : const Color(0xFFE2E8F0),
                 ),
-              )
-            : null,
-      ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: [
+                  // Avatar with red dot
+                  Stack(
+                    children: [
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(otherUid)
+                            .snapshots(),
+                        builder: (context, userSnap) {
+                          final userData =
+                              userSnap.data?.data() as Map<String, dynamic>? ??
+                              {};
+                          final userName =
+                              userData['name']?.toString() ?? 'User';
+                          final userPhoto = userData['photoURL']?.toString();
+
+                          return CircleAvatar(
+                            radius: 26,
+                            backgroundColor: const Color(0xFF6366F1),
+                            backgroundImage: userPhoto != null
+                                ? NetworkImage(userPhoto)
+                                : null,
+                            child: userPhoto == null
+                                ? Text(
+                                    userName[0].toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                      // ✅ NEW: Red dot for unread
+                      if (unread)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+                  // Message content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: StreamBuilder<DocumentSnapshot>(
+                                stream: FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(otherUid)
+                                    .snapshots(),
+                                builder: (context, userSnap) {
+                                  final userData =
+                                      userSnap.data?.data()
+                                          as Map<String, dynamic>? ??
+                                      {};
+                                  final userName =
+                                      userData['name']?.toString() ?? 'User';
+
+                                  return Text(
+                                    userName,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      // ✅ NEW: Bold if unread
+                                      fontWeight: unread
+                                          ? FontWeight.w900
+                                          : FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Time
+                            Text(
+                              _formatTime(lastMessageAt),
+                              style: TextStyle(
+                                fontSize: 12,
+                                // ✅ NEW: Bold if unread
+                                fontWeight: unread
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: unread
+                                    ? const Color(0xFF6366F1)
+                                    : const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            // "You:" prefix if current user sent
+                            if (lastSenderId == myUid)
+                              Text(
+                                'You: ',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: unread
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                lastMessage.isEmpty ? 'Say hi 👋' : lastMessage,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  // ✅ NEW: Bold if unread
+                                  fontWeight: unread
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: unread
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFF64748B),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Chevron
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: unread
+                        ? const Color(0xFF6366F1)
+                        : const Color(0xFFCBD5E1),
+                    size: 24,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  String _formatTime(Timestamp? timestamp) {
+    if (timestamp == null) return '';
+
+    final now = DateTime.now();
+    final date = timestamp.toDate();
+    final difference = now.difference(date);
+
+    if (difference.inMinutes < 1) {
+      return 'Now';
+    } else if (difference.inHours < 1) {
+      return '${difference.inMinutes}m';
+    } else if (difference.inDays < 1) {
+      return '${difference.inHours}h';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d';
+    } else {
+      return '${date.day}/${date.month}';
+    }
   }
 }
 

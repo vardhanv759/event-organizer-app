@@ -335,7 +335,7 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
                 if (_viewMode == _AccommodationViewMode.list) {
                   return SliverList.separated(
                     itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (context, i) {
                       final data = filtered[i].data();
                       final distance = _distanceFromUser(data);
@@ -711,13 +711,12 @@ class _HotelGridCard extends StatelessWidget {
                     : CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Shimmer.fromColors(
+                        placeholder: (_, _) => Shimmer.fromColors(
                           baseColor: Colors.grey.shade200,
                           highlightColor: Colors.grey.shade100,
                           child: Container(color: Colors.white),
                         ),
-                        errorWidget: (_, __, ___) =>
-                            _ImageFallback(title: name),
+                        errorWidget: (_, _, _) => _ImageFallback(title: name),
                       ),
               ),
             ),
@@ -906,13 +905,12 @@ class _HotelListCard extends StatelessWidget {
                     : CachedNetworkImage(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Shimmer.fromColors(
+                        placeholder: (_, _) => Shimmer.fromColors(
                           baseColor: Colors.grey.shade200,
                           highlightColor: Colors.grey.shade100,
                           child: Container(color: Colors.white),
                         ),
-                        errorWidget: (_, __, ___) =>
-                            _ImageFallback(title: name),
+                        errorWidget: (_, _, _) => _ImageFallback(title: name),
                       ),
               ),
             ),

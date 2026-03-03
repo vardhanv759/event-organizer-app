@@ -1510,8 +1510,8 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
           height: height,
           alignment:
               Alignment.center, // Center-crop to potentially hide watermarks
-          placeholder: (_, __) => _buildImagePlaceholder(height),
-          errorWidget: (_, __, ___) => _buildImageFallback(height),
+          placeholder: (_, _) => _buildImagePlaceholder(height),
+          errorWidget: (_, _, _) => _buildImageFallback(height),
           imageBuilder: (context, imageProvider) => Container(
             decoration: BoxDecoration(
               image: DecorationImage(
@@ -1966,12 +1966,12 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                         ? CachedNetworkImage(
                             imageUrl: photo,
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => Shimmer.fromColors(
+                            placeholder: (_, _) => Shimmer.fromColors(
                               baseColor: Colors.grey.shade200,
                               highlightColor: Colors.grey.shade100,
                               child: Container(color: Colors.white),
                             ),
-                            errorWidget: (_, __, ___) => Container(
+                            errorWidget: (_, _, _) => Container(
                               color: Colors.grey.shade200,
                               child: const Center(
                                 child: Icon(Icons.restaurant_rounded, size: 60),
