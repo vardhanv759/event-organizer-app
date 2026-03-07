@@ -20,7 +20,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -865,46 +865,50 @@ class _SpaceDetailsPopup extends StatelessWidget {
                 ),
               ),
 
-              // Bottom Button
-              if (lat != null && lng != null)
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -5),
+              // Bottom Button - ALWAYS SHOWS
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openInGoogleMaps(
+                        lat: lat,
+                        lng: lng,
+                        address: address,
+                        postcode: postcode,
                       ),
-                    ],
-                  ),
-                  child: SafeArea(
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _openInGoogleMaps(lat, lng),
-                        icon: const Icon(Icons.map_rounded, size: 24),
-                        label: const Text(
-                          'Open in Google Maps',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      icon: const Icon(Icons.map_rounded, size: 24),
+                      label: const Text(
+                        'Open in Google Maps',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         );
@@ -912,16 +916,35 @@ class _SpaceDetailsPopup extends StatelessWidget {
     );
   }
 
-  static Future<void> _openInGoogleMaps(double lat, double lng) async {
-    final url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+  static Future<void> _openInGoogleMaps({
+    double? lat,
+    double? lng,
+    required String address,
+    required String postcode,
+  }) async {
+    String url;
+
+    // Use coordinates if available, otherwise use address
+    if (lat != null && lng != null) {
+      url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+      print('🗺️ Opening Maps with coordinates: $lat, $lng');
+    } else {
+      // Fallback to address search
+      final searchQuery = postcode.isNotEmpty ? '$address, $postcode' : address;
+      final encodedQuery = Uri.encodeComponent(searchQuery);
+      url = 'https://www.google.com/maps/search/?api=1&query=$encodedQuery';
+      print('🗺️ Opening Maps with address: $searchQuery');
+    }
 
     try {
       final uri = Uri.parse(url);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        print('❌ Could not open Google Maps');
       }
     } catch (e) {
-      print('Error opening Google Maps: $e');
+      print('❌ Error opening Google Maps: $e');
     }
   }
 }

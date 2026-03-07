@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,19 +25,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Preferences
   String _theme = 'system'; // light, dark, system
-  String _defaultView = 'grid'; // grid, list
-  String _distanceUnits = 'km'; // km, mi
 
   // App info
   String _appVersion = '...';
-  String _cacheSize = 'Calculating...';
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
     _loadAppInfo();
-    _calculateCacheSize();
   }
 
   Future<void> _loadPreferences() async {
@@ -45,8 +43,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _eventReminders = prefs.getBool('eventReminders') ?? true;
       _parkingUpdates = prefs.getBool('parkingUpdates') ?? true;
       _theme = prefs.getString('theme') ?? 'system';
-      _defaultView = prefs.getString('defaultView') ?? 'grid';
-      _distanceUnits = prefs.getString('distanceUnits') ?? 'km';
     });
   }
 
@@ -63,14 +59,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final packageInfo = await PackageInfo.fromPlatform();
     setState(() {
       _appVersion = '${packageInfo.version} (${packageInfo.buildNumber})';
-    });
-  }
-
-  Future<void> _calculateCacheSize() async {
-    // Placeholder - actual implementation would check app directory size
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() {
-      _cacheSize = '45 MB';
     });
   }
 
@@ -148,47 +136,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           _showMessage('Failed to delete account: $e', isError: true);
         }
-      }
-    }
-  }
-
-  Future<void> _clearCache() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Cache'),
-        content: const Text(
-          'This will clear cached images and data. The app may take longer to load content initially.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      // Show loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-
-      await Future.delayed(const Duration(seconds: 2)); // Simulate clearing
-
-      if (mounted) {
-        Navigator.pop(context); // Close loading
-        setState(() {
-          _cacheSize = '0 MB';
-        });
-        _showMessage('Cache cleared successfully');
       }
     }
   }
@@ -337,82 +284,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 onTap: () => _showThemeSelector(),
-              ),
-              const Divider(height: 1),
-              _buildSettingsTile(
-                icon: Icons.view_module_rounded,
-                title: 'Default View',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _defaultView == 'grid' ? 'Grid' : 'List',
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
-                ),
-                onTap: () => _showViewSelector(),
-              ),
-              const Divider(height: 1),
-              _buildSettingsTile(
-                icon: Icons.straighten_rounded,
-                title: 'Distance Units',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _distanceUnits == 'km' ? 'Kilometers' : 'Miles',
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
-                ),
-                onTap: () => _showDistanceUnitsSelector(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // DATA SECTION
-          _buildSectionHeader('DATA'),
-          _buildSettingsCard(
-            children: [
-              _buildSettingsTile(
-                icon: Icons.cleaning_services_rounded,
-                title: 'Clear Cache',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _cacheSize,
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
-                ),
-                onTap: _clearCache,
               ),
             ],
           ),
@@ -598,44 +469,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onSelected: (value) {
           setState(() => _theme = value);
           _savePreference('theme', value);
-        },
-      ),
-    );
-  }
 
-  void _showViewSelector() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _buildSelector(
-        title: 'Default View',
-        options: const ['Grid', 'List'],
-        values: const ['grid', 'list'],
-        currentValue: _defaultView,
-        onSelected: (value) {
-          setState(() => _defaultView = value);
-          _savePreference('defaultView', value);
-        },
-      ),
-    );
-  }
-
-  void _showDistanceUnitsSelector() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _buildSelector(
-        title: 'Distance Units',
-        options: const ['Kilometers', 'Miles'],
-        values: const ['km', 'mi'],
-        currentValue: _distanceUnits,
-        onSelected: (value) {
-          setState(() => _distanceUnits = value);
-          _savePreference('distanceUnits', value);
+          // ✅ UPDATE: Notify the app to change theme
+          Provider.of<ThemeProvider>(context, listen: false).setTheme(value);
         },
       ),
     );

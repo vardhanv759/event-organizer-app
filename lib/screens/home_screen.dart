@@ -652,14 +652,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.22),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -689,6 +681,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         const SizedBox(height: 10),
                         const Wrap(spacing: 8, runSpacing: 8),
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.22),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: SafeNetworkAvatar(
+                      radius: 24,
+                      photoUrl: photoUrl,
+                      name: safeName,
                     ),
                   ),
                 ],
@@ -950,107 +955,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               endDrawer: (data == null) ? null : _buildProfileEndDrawer(data),
             ),
 
-            // Top-right profile avatar overlay
-            Positioned(
-              top: 10,
-              right: 12,
-              child: SafeArea(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      if (data != null) _openProfileDrawer();
-                    },
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.86),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.14),
-                            blurRadius: 18,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          SafeNetworkAvatar(
-                            radius: 18,
-                            photoUrl: (data?['photoUrl'] as String?)?.trim(),
-                            name:
-                                ((data?['displayName'] ?? data?['name'])
-                                        as String?)
-                                    ?.trim(),
-                          ),
-
-                          if (uid != null)
-                            StreamBuilder<int>(
-                              stream:
-                                  MessagingService.totalNotificationCountStream(
-                                    uid,
-                                  ),
-                              builder: (context, snap) {
-                                final count = snap.data ?? 0;
-                                if (count <= 0) {
-                                  return const SizedBox.shrink();
-                                }
-
-                                return Positioned(
-                                  top: -4,
-                                  right: -4,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFFEF4444),
-                                          Color(0xFFDC2626),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 2,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(
-                                            0xFFEF4444,
-                                          ).withOpacity(0.5),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Text(
-                                      count > 99 ? '99+' : '$count',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
             if (needsVerificationGate)
               _buildEmailVerificationOverlay(authUser.email),
           ],
@@ -1128,122 +1032,130 @@ class ExploreTabPremium extends StatelessWidget {
         ? 'Guest'
         : name.split(' ').first;
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          stretch: true,
-          expandedHeight: 320,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          flexibleSpace: FlexibleSpaceBar(
-            background: _HeroPremium(
-              firstName: firstName,
-              onSearchTap: () {
-                // Navigate to advanced search screen
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
-              },
-            ),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(32),
-                topRight: Radius.circular(32),
-              ),
-            ),
-            child: const SizedBox(height: 0),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 130),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              const _SectionHeader(
-                title: 'Quick actions',
-                subtitle: 'Browse all categories here',
-              ),
-              const SizedBox(height: 12),
-              _PremiumActionGrid(
-                onEvents: () => onGoToTab(1),
-                onParking: () => onGoToTab(2),
-                onDining: () => onGoToTab(3),
-                onStay: () => onGoToTab(4),
-                onOffers: onOpenOffers,
-                onAi: onOpenAi,
-              ),
-              const SizedBox(height: 24),
-              _SectionHeader(
-                title: 'Upcoming in next 3 days',
-                subtitle: 'Wembley • Updated today • Verified sources',
-                actionText: 'See all',
-                onAction: () => onGoToTab(1),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 150,
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _upcoming3DaysStream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const _UpcomingSkeletonRow();
-                    }
-
-                    final docs = snapshot.data?.docs ?? [];
-                    if (docs.isEmpty) {
-                      return _EmptyUpcomingCard(onTap: () => onGoToTab(1));
-                    }
-
-                    return ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: docs.length + 1,
-                      separatorBuilder: (_, _) => const SizedBox(width: 14),
-                      itemBuilder: (context, i) {
-                        if (i == docs.length) {
-                          return _SeeAllCard(onTap: () => onGoToTab(1));
-                        }
-                        final e = docs[i].data();
-                        final title =
-                            (e['title'] as String?) ?? 'Unnamed event';
-                        final ts = e['startDateTime'] as Timestamp?;
-                        final dt = ts?.toDate();
-
-                        final category = (e['category'] as String?)?.trim();
-                        final cat = (category == null || category.isEmpty)
-                            ? 'Event'
-                            : category;
-
-                        return _UpcomingEventCard(
-                          title: title,
-                          category: cat,
-                          start: dt,
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(title),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                margin: const EdgeInsets.all(16),
-                              ),
-                            );
-                          },
-                        );
-                      },
+    return Stack(
+      children: [
+        CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              stretch: true,
+              expandedHeight: 247,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              automaticallyImplyLeading: false, // ✅ Removes the menu icon
+              actions: const [], // ✅ Prevents automatic endDrawer button
+              flexibleSpace: FlexibleSpaceBar(
+                background: _HeroPremium(
+                  firstName: firstName,
+                  onSearchTap: () {
+                    // Navigate to advanced search screen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SearchScreen()),
                     );
                   },
                 ),
               ),
-            ]),
-          ),
+            ),
+            SliverToBoxAdapter(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    topRight: Radius.circular(32),
+                  ),
+                ),
+                child: const SizedBox(height: 0),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                130,
+              ), // ✅ Changed from 20 to 12
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const SizedBox(height: 12), // ✅ Keep as 12 (was already good)
+                  _PremiumActionGrid(
+                    onEvents: () => onGoToTab(1),
+                    onParking: () => onGoToTab(2),
+                    onDining: () => onGoToTab(3),
+                    onStay: () => onGoToTab(4),
+                    onOffers: onOpenOffers,
+                    onAi: onOpenAi,
+                  ),
+                  const SizedBox(height: 24),
+                  _SectionHeader(
+                    title: 'Upcoming in next 3 days',
+                    subtitle: 'Wembley • Updated today • Verified sources',
+                    actionText: 'See all',
+                    onAction: () => onGoToTab(1),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 150,
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _upcoming3DaysStream(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const _UpcomingSkeletonRow();
+                        }
+
+                        final docs = snapshot.data?.docs ?? [];
+                        if (docs.isEmpty) {
+                          return _EmptyUpcomingCard(onTap: () => onGoToTab(1));
+                        }
+
+                        return ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: docs.length + 1,
+                          separatorBuilder: (_, _) => const SizedBox(width: 14),
+                          itemBuilder: (context, i) {
+                            if (i == docs.length) {
+                              return _SeeAllCard(onTap: () => onGoToTab(1));
+                            }
+                            final e = docs[i].data();
+                            final title =
+                                (e['title'] as String?) ?? 'Unnamed event';
+                            final ts = e['startDateTime'] as Timestamp?;
+                            final dt = ts?.toDate();
+
+                            final category = (e['category'] as String?)?.trim();
+                            final cat = (category == null || category.isEmpty)
+                                ? 'Event'
+                                : category;
+
+                            return _UpcomingEventCard(
+                              title: title,
+                              category: cat,
+                              start: dt,
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(title),
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    margin: const EdgeInsets.all(16),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1315,84 +1227,90 @@ class _HeroPremium extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0EA5E9), Color(0xFF6366F1), Color(0xFF8B5CF6)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        Positioned(
-          top: -80,
-          right: -60,
-          child: Container(
-            height: 240,
-            width: 240,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.10),
-            ),
-          ),
-        ),
-        Positioned(
-          bottom: -110,
-          left: -80,
-          child: Container(
-            height: 260,
-            width: 260,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.08),
-            ),
-          ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 40),
-                Text(
-                  'Welcome, $firstName',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.92),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Explore Wembley',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.8,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+    return Container(
+      color: const Color(0xFFF8FAFC),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 20),
+
+              // Welcome text
+              RichText(
+                text: TextSpan(
                   children: [
-                    _HeroPill(icon: Icons.location_on_rounded, text: 'Wembley'),
+                    const TextSpan(
+                      text: 'Welcome, ',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    TextSpan(
+                      text: firstName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                _GlassSearchBar(onTap: onSearchTap),
-                const Spacer(),
-              ],
-            ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // "Explore Wembley" - keep as is
+              RichText(
+                text: const TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Explore ',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF0F172A),
+                        height: 1.2,
+                      ),
+                    ),
+                    TextSpan(
+                      text: 'Wembley',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Subtitle - keep as is
+              const Text(
+                'Discover upcoming events, dining spots,\nand places to stay.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF64748B),
+                  height: 1.5,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Search bar
+              _GlassSearchBar(onTap: onSearchTap),
+
+              const Spacer(),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1439,65 +1357,55 @@ class _GlassSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withOpacity(0.25)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.search_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Search events, dining, accommodation...',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.90),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.20),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.search_rounded,
+              color: Color(0xFF94A3B8),
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Search events, dining, accommodation...',
+                style: TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF), // soft accent bg
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.tune_rounded,
+                color: Color(0xFF2563EB), // accent
+                size: 20,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1586,78 +1494,132 @@ class _UpcomingEventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final countdown = _formatCountdown(start);
+    final imageUrl = _getCategoryImage(category);
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         width: 260,
-        padding: const EdgeInsets.all(14),
+        height: 150, // Fixed height
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.event_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      color: _HomeUi.text,
-                      height: 1.25,
-                      letterSpacing: -0.3,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Background image
+              Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Chip(text: category),
-                      _Chip(text: countdown, icon: Icons.timer_rounded),
-                    ],
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+
+              // Gradient overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black.withOpacity(0.6),
+                      Colors.black.withOpacity(0.2),
+                    ],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+                ),
+              ),
+
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Category badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        category,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    // Title
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.2,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    // Time/countdown
+                    Text(
+                      countdown,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  // Add this method to the _UpcomingEventCard class
+  String _getCategoryImage(String category) {
+    final lower = category.toLowerCase();
+    if (lower.contains('sport') ||
+        lower.contains('football') ||
+        lower.contains('uefa')) {
+      return 'https://images.unsplash.com/photo-1540747913346-19e32365c21a?w=400';
+    } else if (lower.contains('music') || lower.contains('concert')) {
+      return 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=400';
+    } else if (lower.contains('comedy') || lower.contains('show')) {
+      return 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=400';
+    } else {
+      return 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400';
+    }
   }
 
   String _formatCountdown(DateTime? start) {
@@ -1877,152 +1839,241 @@ class _PremiumActionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 1.0,
+    return Column(
       children: [
-        _ActionTile(
-          label: 'Events',
-          icon: Icons.event_rounded,
-          gradient: const [_HomeUi.primary, Color(0xFF364FC7)],
-          onTap: onEvents,
+        // Row 1: Events, Dining
+        Row(
+          children: [
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Events',
+                subtitle: 'See what’s happening',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=600',
+                onTap: onEvents,
+                showArrow: true,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Dining',
+                subtitle: 'Discover great restaurants',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600',
+                onTap: onDining,
+                showArrow: true,
+              ),
+            ),
+          ],
         ),
-        _ActionTile(
-          label: 'Parking',
-          icon: Icons.local_parking_rounded,
-          gradient: const [Color(0xFF22C55E), Color(0xFF0EA5E9)],
-          onTap: onParking,
+        const SizedBox(height: 10),
+
+        // Row 2: Stay, Offers
+        Row(
+          children: [
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Stay',
+                subtitle: 'Find a cozy place to stay',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=600',
+                onTap: onStay,
+                showArrow: true,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Offers',
+                subtitle: 'Special deals & discounts',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1607083206869-4c7672e72a8a?w=600',
+                onTap: onOffers,
+                badge: 'Today',
+                showArrow: true,
+              ),
+            ),
+          ],
         ),
-        _ActionTile(
-          label: 'Dining',
-          icon: Icons.restaurant_rounded,
-          gradient: const [Color(0xFFFF922B), Color(0xFFFF6B6B)],
-          onTap: onDining,
-        ),
-        _ActionTile(
-          label: 'Stay',
-          icon: Icons.hotel_rounded,
-          gradient: const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-          onTap: onStay,
-        ),
-        _ActionTile(
-          label: 'Offers',
-          icon: Icons.local_offer_rounded,
-          gradient: const [Color(0xFFFF4D6D), Color(0xFFFF922B)],
-          onTap: onOffers,
-          badge: 'Today',
-        ),
-        _ActionTile(
-          label: 'Plan your day (AI)',
-          icon: Icons.auto_awesome_rounded,
-          gradient: const [_HomeUi.primary, Color(0xFF8B5CF6)],
-          onTap: onAi,
-          badge: 'Smart',
+        const SizedBox(height: 12),
+
+        // Row 3: Parking, AI
+        Row(
+          children: [
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Parking',
+                subtitle: 'Book your parking spot',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=600',
+                onTap: onParking,
+                showArrow: true,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _LargeActionCard(
+                title: 'Plan your day (AI)',
+                subtitle: 'Smart festival planning',
+                imageUrl:
+                    'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600',
+                onTap: onAi,
+                badge: 'Smart',
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-class _ActionTile extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final List<Color> gradient;
+class _LargeActionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String imageUrl;
   final VoidCallback onTap;
   final String? badge;
+  final bool showArrow;
 
-  const _ActionTile({
-    required this.label,
-    required this.icon,
-    required this.gradient,
+  const _LargeActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
     required this.onTap,
     this.badge,
+    this.showArrow = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            colors: gradient,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: gradient.first.withOpacity(0.20),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              top: 10,
-              right: 10,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.20),
-                  borderRadius: BorderRadius.circular(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image card
+          Container(
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
-                child: Icon(icon, color: Colors.white, size: 22),
-              ),
+              ],
             ),
-            Positioned(
-              left: 12,
-              bottom: 12,
-              right: 12,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  if (badge != null) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+                  // Background image
+                  Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Container(color: const Color(0xFF6366F1)),
+                  ),
+
+                  // Dark overlay for text readability
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.5),
+                          Colors.black.withOpacity(0.2),
+                        ],
+                        begin: Alignment.bottomLeft,
+                        end: Alignment.topRight,
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.20),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        badge!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 9,
+                    ),
+                  ),
+
+                  // Content on image
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Badge at top-right if exists
+                        if (badge != null)
+                          Align(
+                            alignment: Alignment.topRight,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                badge!,
+                                style: const TextStyle(
+                                  color: Color(0xFF0F172A),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        const Spacer(),
+
+                        // Title at bottom-left
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                  ],
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13,
-                      letterSpacing: -0.3,
-                      height: 1.1,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // Subtitle below card
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                    height: 1.4,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (showArrow) ...[
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.arrow_forward,
+                  size: 16,
+                  color: Color(0xFF64748B),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2191,275 +2242,3 @@ class SafeNetworkAvatar extends StatelessWidget {
     );
   }
 }
-
-// ============================================================================
-// OLD SEARCH IMPLEMENTATION - REPLACED WITH search_screen.dart
-// ============================================================================
-// The search functionality has been moved to a separate file: search_screen.dart
-// This provides:
-// - Multi-collection search (Events, Dining, Accommodation)
-// - Real-time case-insensitive search
-// - Category filters
-// - Beautiful UI with detail sheets
-// - Direct navigation to specific screens
-//
-// The old implementation below is kept for reference but is no longer used.
-// ============================================================================
-
-/* OLD SEARCH CODE - NO LONGER USED
-class _SearchHit {
-  final String type; // Event | Dining | Stay
-  final String title;
-  final String subtitle;
-  final String id;
-  final String collection;
-
-  _SearchHit({
-    required this.type,
-    required this.title,
-    required this.subtitle,
-    required this.id,
-    required this.collection,
-  });
-}
-
-class WembleySearchDelegate extends SearchDelegate<_SearchHit?> {
-  WembleySearchDelegate();
-
-  static const _eventsCol = 'events_wembley';
-  static const _diningCol = 'Dining_wembley';
-  static const _stayCol = 'accommodations_wembley';
-
-  static const _eventsField = 'title';
-  static const _diningField = 'name';
-  static const _stayField = 'name';
-
-  static const _eventsSub = 'category';
-  static const _diningSub = 'category';
-  static const _staySub = 'type';
-
-  String _prefixEnd(String q) => '$q\uf8ff';
-
-  Future<List<_SearchHit>> _searchAll(String q) async {
-    final query = q.trim();
-    if (query.isEmpty) return [];
-
-    final qStart = query;
-    final qEnd = _prefixEnd(query);
-    final fs = FirebaseFirestore.instance;
-
-    Future<List<_SearchHit>> searchCollection({
-      required String collection,
-      required String field,
-      required String type,
-      String? subtitleField,
-      int limit = 8,
-    }) async {
-      final snap = await fs
-          .collection(collection)
-          .orderBy(field)
-          .startAt([qStart])
-          .endAt([qEnd])
-          .limit(limit)
-          .get();
-
-      return snap.docs.map((d) {
-        final data = d.data();
-        final title = (data[field] as String?)?.trim() ?? 'Untitled';
-        final sub = (subtitleField == null)
-            ? ''
-            : ((data[subtitleField] as String?)?.trim() ?? '');
-        return _SearchHit(
-          type: type,
-          title: title,
-          subtitle: sub,
-          id: d.id,
-          collection: collection,
-        );
-      }).toList();
-    }
-
-    final results = await Future.wait([
-      searchCollection(
-        collection: _eventsCol,
-        field: _eventsField,
-        type: 'Event',
-        subtitleField: _eventsSub,
-      ),
-      searchCollection(
-        collection: _diningCol,
-        field: _diningField,
-        type: 'Dining',
-        subtitleField: _diningSub,
-      ),
-      searchCollection(
-        collection: _stayCol,
-        field: _stayField,
-        type: 'Stay',
-        subtitleField: _staySub,
-      ),
-    ]);
-
-    return results.expand((x) => x).toList();
-  }
-
-  @override
-  List<Widget> buildActions(BuildContext context) {
-    return [
-      if (query.isNotEmpty)
-        IconButton(
-          icon: const Icon(Icons.clear_rounded),
-          onPressed: () => query = '',
-        ),
-    ];
-  }
-
-  @override
-  Widget buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back_rounded),
-      onPressed: () => close(context, null),
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    return _ResultsList(
-      query: query,
-      searchAll: _searchAll,
-      onPick: (hit) => close(context, hit),
-    );
-  }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    return _ResultsList(
-      query: query,
-      searchAll: _searchAll,
-      onPick: (hit) => close(context, hit),
-    );
-  }
-}
-
-class _ResultsList extends StatelessWidget {
-  final String query;
-  final Future<List<_SearchHit>> Function(String q) searchAll;
-  final void Function(_SearchHit hit) onPick;
-
-  const _ResultsList({
-    required this.query,
-    required this.searchAll,
-    required this.onPick,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (query.trim().isEmpty) {
-      return const Center(
-        child: Text(
-          'Search events, dining, and stays in Wembley',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: _HomeUi.textMuted,
-          ),
-        ),
-      );
-    }
-
-    return FutureBuilder<List<_SearchHit>>(
-      future: searchAll(query),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-        }
-        final items = snap.data ?? [];
-        if (items.isEmpty) {
-          return const Center(
-            child: Text(
-              'No results found',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: _HomeUi.textMuted,
-              ),
-            ),
-          );
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, i) {
-            final hit = items[i];
-            final icon = hit.type == 'Event'
-                ? Icons.event_rounded
-                : hit.type == 'Dining'
-                ? Icons.restaurant_rounded
-                : Icons.hotel_rounded;
-
-            return InkWell(
-              onTap: () => onPick(hit),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      height: 42,
-                      width: 42,
-                      decoration: BoxDecoration(
-                        color: const _HomeUi.primarySoft,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(icon, color: const Color(0xFF4F46E5)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            hit.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: _HomeUi.text,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            hit.subtitle.isEmpty
-                                ? hit.type
-                                : '${hit.type} • ${hit.subtitle}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: _HomeUi.textMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: _HomeUi.textMuted,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-*/ // END OF OLD SEARCH CODE
