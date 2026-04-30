@@ -525,9 +525,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ---------------------------------------------------------------------------
   Widget _buildPremiumBottomNav() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color.fromARGB(255, 255, 255, 255),
         borderRadius: BorderRadius.circular(_radiusLg),
         boxShadow: [
           BoxShadow(
@@ -554,8 +554,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Expanded(
                 child: _PremiumNavItem(
                   isSelected: _selectedIndex == 1,
-                  icon: Icons.event_rounded,
-                  label: 'Events',
+                  icon: Icons.favorite_outline_rounded,
+                  label: 'Favorites',
                   onTap: () => setTab(1),
                 ),
               ),
@@ -570,16 +570,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Expanded(
                 child: _PremiumNavItem(
                   isSelected: _selectedIndex == 3,
-                  icon: Icons.restaurant_rounded,
-                  label: 'Dining',
+                  icon: Icons.calendar_month_rounded,
+                  label: 'Bookings',
                   onTap: () => setTab(3),
                 ),
               ),
               Expanded(
                 child: _PremiumNavItem(
                   isSelected: _selectedIndex == 4,
-                  icon: Icons.hotel_rounded,
-                  label: 'Stay',
+                  icon: Icons.help_outline_rounded,
+                  label: 'Help & Support',
                   onTap: () => setTab(4),
                 ),
               ),

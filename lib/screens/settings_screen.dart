@@ -255,40 +255,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
 
-          // PREFERENCES SECTION
-          _buildSectionHeader('PREFERENCES'),
-          _buildSettingsCard(
-            children: [
-              _buildSettingsTile(
-                icon: Icons.palette_rounded,
-                title: 'Theme',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _theme == 'light'
-                          ? 'Light'
-                          : _theme == 'dark'
-                          ? 'Dark'
-                          : 'System',
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
-                ),
-                onTap: () => _showThemeSelector(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
           // ABOUT SECTION
           _buildSectionHeader('ABOUT'),
           _buildSettingsCard(

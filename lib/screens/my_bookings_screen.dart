@@ -66,7 +66,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
         slivers: [
           // Premium App Bar
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 214,
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF6366F1),
@@ -133,7 +133,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                               size: 32,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           const Text(
                             'My Bookings',
                             style: TextStyle(

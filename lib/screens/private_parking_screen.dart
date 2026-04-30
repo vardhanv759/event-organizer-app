@@ -8,8 +8,8 @@ import 'private_parking_nearby_screen.dart';
 import 'wembley_communities_screen.dart';
 
 class PrivateParkingScreen extends StatelessWidget {
-  final Map<String, dynamic>
-  userData; // keep for compatibility with your routing
+  final Map<String, dynamic> userData;
+
   const PrivateParkingScreen({super.key, required this.userData});
 
   @override
@@ -27,9 +27,16 @@ class PrivateParkingScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FF),
       appBar: AppBar(
-        title: const Text('Private Parking'),
+        title: const Text(
+          'Private Parking',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: userRef.snapshots(),
@@ -46,122 +53,174 @@ class PrivateParkingScreen extends StatelessWidget {
                   .toLowerCase() ??
               'none';
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
-            children: [
-              _BigRowButton(
-                title: 'Become a Host',
-                subtitle: status == 'approved'
-                    ? 'Manage your spaces and add new listings.'
-                    : 'Earn money by renting your driveway/bay.',
-                icon: Icons.add_business_rounded,
-                gradient: const [Color(0xFF0EA5E9), Color(0xFF6366F1)],
-                badgeText: status == 'approved'
-                    ? 'Approved provider'
-                    : (status == 'pending' ? 'Pending review' : null),
-                onTap: () async {
-                  if (status == 'approved') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ParkingProviderDashboardScreen(),
-                      ),
-                    );
-                    return;
-                  }
-
-                  if (status == 'pending') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Your provider application is pending manual review.',
-                        ),
-                      ),
-                    );
-                    return;
-                  }
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ParkingProviderApplyScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-              _BigRowButton(
-                title: 'Find Parking nearby',
-                subtitle: 'Browse and book private spaces around Wembley.',
-                icon: Icons.location_on_rounded,
-                gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const PrivateParkingNearbyScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-              _BigRowButton(
-                title: 'Messages',
-                subtitle: 'Requests and chats with drivers/providers.',
-                icon: Icons.chat_bubble_rounded,
-                gradient: const [Color(0xFF22C55E), Color(0xFF0EA5E9)],
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const PrivateParkingMessagesScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 14), // ✅ FIX: spacing added here
-              _BigRowButton(
-                title: 'Community Hub',
-                subtitle: 'Join your local zone and connect.',
-                icon: Icons.location_city_rounded,
-                gradient: const [Color(0xFFEC4899), Color(0xFF8B5CF6)],
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const WembleyCommunitiesScreen(),
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header text
+                const Text(
+                  'Quick Actions',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.5,
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              _InfoCard(
-                title: 'How it works',
-                points: const [
-                  'Providers apply and are manually approved.',
-                  'Approved providers can add spaces from the Provider Dashboard.',
-                  'Only approved spaces become visible to drivers.',
-                  'Drivers choose date/time + hours and pay (Stripe phase).',
-                  'Exact address is shown only after payment (Stripe phase).',
-                ],
-              ),
-            ],
+                const SizedBox(height: 4),
+                const Text(
+                  'Choose an option to get started',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // 2x2 Grid Layout
+                _buildGrid(context, status),
+
+                const SizedBox(height: 24),
+
+                // How it works section
+                _InfoCard(
+                  title: 'How it works',
+                  points: const [
+                    'Providers apply and are manually approved.',
+                    'Approved providers can add spaces from the Provider Dashboard.',
+                    'Only approved spaces become visible to drivers.',
+                    'Drivers choose date/time + hours and pay (Stripe phase).',
+                    'Exact address is shown only after payment (Stripe phase).',
+                  ],
+                ),
+              ],
+            ),
           );
         },
       ),
     );
   }
+
+  Widget _buildGrid(BuildContext context, String status) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 14,
+      crossAxisSpacing: 14,
+      childAspectRatio: 0.95,
+      children: [
+        // 1. Become a Host / Manage Your Space (changes based on status)
+        _GridCard(
+          title: status == 'approved' ? 'Manage Your\nSpace' : 'Become\na Host',
+          icon: status == 'approved'
+              ? Icons.dashboard_rounded
+              : Icons.add_business_rounded,
+          gradient: status == 'approved'
+              ? const [
+                  Color(0xFF10B981),
+                  Color(0xFF059669),
+                ] // Green for approved providers
+              : const [
+                  Color(0xFF0EA5E9),
+                  Color(0xFF6366F1),
+                ], // Blue for new applicants
+          badgeText: status == 'pending' ? 'Pending' : null,
+          onTap: () async {
+            if (status == 'approved') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ParkingProviderDashboardScreen(),
+                ),
+              );
+              return;
+            }
+
+            if (status == 'pending') {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Your provider application is pending manual review.',
+                  ),
+                ),
+              );
+              return;
+            }
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ParkingProviderApplyScreen(),
+              ),
+            );
+          },
+        ),
+
+        // 2. Find Parking
+        _GridCard(
+          title: 'Find Parking',
+          icon: Icons.location_on_rounded,
+          gradient: const [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PrivateParkingNearbyScreen(),
+              ),
+            );
+          },
+        ),
+
+        // 3. Messages
+        _GridCard(
+          title: 'Messages',
+          icon: Icons.chat_bubble_rounded,
+          gradient: const [
+            Color.fromARGB(255, 29, 18, 239),
+            Color.fromARGB(255, 141, 68, 236),
+          ],
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PrivateParkingMessagesScreen(),
+              ),
+            );
+          },
+        ),
+
+        // 4. Community Hub
+        _GridCard(
+          title: 'Community Hub',
+          icon: Icons.location_city_rounded,
+          gradient: const [Color(0xFFEC4899), Color(0xFF8B5CF6)],
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const WembleyCommunitiesScreen(),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
 }
 
-class _BigRowButton extends StatelessWidget {
+// Grid Card Widget (Home Screen Style)
+class _GridCard extends StatelessWidget {
   final String title;
-  final String subtitle;
   final IconData icon;
   final List<Color> gradient;
   final VoidCallback onTap;
   final String? badgeText;
 
-  const _BigRowButton({
+  const _GridCard({
     required this.title,
-    required this.subtitle,
     required this.icon,
     required this.gradient,
     required this.onTap,
@@ -171,13 +230,11 @@ class _BigRowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(22),
       onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(24),
           gradient: LinearGradient(
             colors: gradient,
             begin: Alignment.topLeft,
@@ -185,88 +242,78 @@ class _BigRowButton extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 22,
-              offset: const Offset(0, 14),
+              color: gradient[0].withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
-        child: Row(
+        child: Stack(
           children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white.withOpacity(0.22)),
-              ),
-              child: Icon(icon, color: Colors.white),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
+                  // Icon
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
                       ),
-                      if (badgeText != null) ...[
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.18),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.22),
-                            ),
-                          ),
-                          child: Text(
-                            badgeText!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 28),
                   ),
-                  const SizedBox(height: 6),
+
+                  const Spacer(),
+
+                  // Title
                   Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.92),
-                      fontWeight: FontWeight.w700,
-                      height: 1.25,
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      height: 1.2,
+                      letterSpacing: -0.5,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white,
-              size: 28,
-            ),
+
+            // Badge
+            if (badgeText != null)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.25),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    badgeText!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -274,6 +321,7 @@ class _BigRowButton extends StatelessWidget {
   }
 }
 
+// Info Card (unchanged)
 class _InfoCard extends StatelessWidget {
   final String title;
   final List<String> points;
@@ -284,48 +332,76 @@ class _InfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 12),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-            ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.info_outline_rounded,
+                  color: Color(0xFF6366F1),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 16),
           ...points.map(
             (p) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    size: 18,
-                    color: Color(0xFF22C55E),
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF22C55E).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 14,
+                      color: Color(0xFF22C55E),
+                    ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       p,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
-                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                        height: 1.4,
+                        fontSize: 14,
                       ),
                     ),
                   ),

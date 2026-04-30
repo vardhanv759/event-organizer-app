@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -293,6 +295,11 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
   final PageController _promoPageController =
       PageController(); // For promotional slider
 
+  // Auto-slide for promotional carousel
+  Timer? _promoTimer;
+  int _promoCurrentPage = 0;
+  int _promoItemCount = 0;
+
   Position? _currentPosition;
   bool _locationDenied = false;
 
@@ -323,10 +330,41 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
 
   @override
   void dispose() {
+    _promoTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     _promoPageController.dispose();
     super.dispose();
+  }
+
+  // ---------- Promotional auto-slide helpers ----------
+
+  /// Configure the auto-slide for the promotional carousel based on the
+  /// current count of promoted restaurants. Auto-slides only when there
+  /// are 2+ promoted items. Safe to call on every build.
+  void _configurePromoAutoSlide(int itemCount) {
+    if (itemCount == _promoItemCount) return;
+    _promoItemCount = itemCount;
+
+    _promoTimer?.cancel();
+
+    if (itemCount < 2) {
+      _promoCurrentPage = 0;
+      return;
+    }
+
+    // Defer start so PageController is attached after first frame.
+    _promoTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || !_promoPageController.hasClients || _promoItemCount < 2) {
+        return;
+      }
+      final next = (_promoCurrentPage + 1) % _promoItemCount;
+      _promoPageController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    });
   }
 
   // Helper method to determine grid columns based on screen size
@@ -833,6 +871,8 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
 
           // Get promoted places for the banner
           final promotedPlaces = places.where((p) => p.isPromoted).toList();
+          // (Re)configure the auto-slide timer if the count changed.
+          _configurePromoAutoSlide(promotedPlaces.length);
 
           return RefreshIndicator(
             onRefresh: () async => _initLocation(),
@@ -884,9 +924,9 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                       ),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: _getGridCrossAxisCount(),
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 0.67,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 14,
+                        childAspectRatio: 0.68,
                       ),
                     ),
                   ),
@@ -902,7 +942,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     return SliverAppBar(
       pinned: true,
       stretch: true,
-      expandedHeight: 220,
+      expandedHeight: 175,
       backgroundColor: const Color(0xFFF8F9FF),
       elevation: 0,
       actions: [
@@ -930,152 +970,184 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     // Responsive height for promotional banner
     final screenWidth = MediaQuery.of(context).size.width;
     final promoHeight = (screenWidth - 32) * 0.45; // 45% of available width
+    final clampedHeight = promoHeight.clamp(140.0, 180.0);
 
-    return SizedBox(
-      height: promoHeight.clamp(140.0, 180.0), // Min 140, Max 180
-      child: PageView.builder(
-        controller: _promoPageController,
-        itemCount: promotedPlaces.length,
-        itemBuilder: (context, index) {
-          final place = promotedPlaces[index];
-          final distance = _distanceFromUser(place);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: clampedHeight,
+          child: PageView.builder(
+            controller: _promoPageController,
+            itemCount: promotedPlaces.length,
+            onPageChanged: (index) {
+              if (mounted) setState(() => _promoCurrentPage = index);
+            },
+            itemBuilder: (context, index) {
+              final place = promotedPlaces[index];
+              final distance = _distanceFromUser(place);
 
-          return GestureDetector(
-            onTap: () => _showRestaurantDetails(place, distance),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: Stack(
-                children: [
-                  ClipRRect(
+              return GestureDetector(
+                onTap: () => _showRestaurantDetails(place, distance),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    child: _buildRestaurantImage(
-                      place,
-                      height: promoHeight.clamp(140.0, 180.0),
-                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.1),
-                          Colors.black.withOpacity(0.7),
-                        ],
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: _buildRestaurantImage(
+                          place,
+                          height: clampedHeight,
+                        ),
                       ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.star_rounded,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'PROMOTED',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 10,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: 16,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          place.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.3,
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.1),
+                              Colors.black.withOpacity(0.7),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            if (place.rating != null) ...[
-                              const Icon(
+                      ),
+                      Positioned(
+                        top: 12,
+                        left: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFBBF24),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
                                 Icons.star_rounded,
                                 size: 14,
-                                color: Color(0xFFFBBF24),
+                                color: Colors.white,
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4),
                               Text(
-                                place.rating!.toStringAsFixed(1),
-                                style: const TextStyle(
+                                'PROMOTED',
+                                style: TextStyle(
                                   color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                            ],
-                            if (distance != null) ...[
-                              const Icon(
-                                Icons.place_rounded,
-                                size: 14,
-                                color: Colors.white70,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatDistance(distance),
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 10,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 16,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              place.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                if (place.rating != null) ...[
+                                  const Icon(
+                                    Icons.star_rounded,
+                                    size: 14,
+                                    color: Color(0xFFFBBF24),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    place.rating!.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                if (distance != null) ...[
+                                  const Icon(
+                                    Icons.place_rounded,
+                                    size: 14,
+                                    color: Colors.white70,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDistance(distance),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+                ),
+              );
+            },
+          ),
+        ),
+        // Page indicator dots — only when there are 2+ promoted items.
+        if (promotedPlaces.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(promotedPlaces.length, (i) {
+              final active = i == _promoCurrentPage;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                height: 6,
+                width: active ? 22 : 6,
+                decoration: BoxDecoration(
+                  color: active
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1278,122 +1350,128 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
     );
   }
 
-  // -------------------- PREMIUM GRID CARD (✅ FIXED: no Expanded/Spacer -> no crash) --------------------
+  // -------------------- PREMIUM GRID CARD --------------------
+  // Layout matches the accommodation screen: a fixed-height name slot keeps
+  // 1-line and 2-line cards visually aligned, and a Spacer pushes the action
+  // icon row flush to the bottom regardless of how much content sits above it.
   Widget _buildPremiumGridCard(_PlaceEntry entry) {
     final place = entry.place;
     final dist = entry.distanceMeters;
-    final distKm = dist != null ? (dist / 1000.0) : null;
 
     // Calculate responsive image height based on screen width
     final screenWidth = MediaQuery.of(context).size.width;
     final cardWidth =
-        (screenWidth - 44) / 2; // 44 = 16 left + 16 right + 12 gap
+        (screenWidth - 46) / 2; // 46 = 16 left + 16 right + 14 gap
     final imageHeight = cardWidth * 0.55; // Consistent aspect ratio
 
-    return InkWell(
-      onTap: () => _showRestaurantDetails(place, dist),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image + badges - using responsive height
-            SizedBox(
-              height: imageHeight,
-              width: double.infinity,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildRestaurantImage(place, height: imageHeight),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image + badges - using responsive height
+          SizedBox(
+            height: imageHeight,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildRestaurantImage(place, height: imageHeight),
 
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.00),
-                          Colors.black.withOpacity(0.35),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                  ),
-                  // Heart button
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    child: _RestaurantFavoriteButton(
-                      restaurantId: place.id,
-                      restaurantData: {
-                        'name': place.name,
-                        'address': place.address,
-                        'cuisine': place.cuisine,
-                        'rating': place.rating,
-                        'priceLevel': place.priceLevel,
-                        'photoUrl': place.photoUrl ?? place.photoReference,
-                        'website': place.website,
-                      },
-                    ),
-                  ),
-                  if (place.isPopular)
-                    const Positioned(
-                      top: 10,
-                      right: 10,
-                      child: _MiniBadge(
-                        icon: Icons.trending_up_rounded,
-                        text: 'Popular',
-                      ),
-                    ),
-
-                  Positioned(
-                    left: 12,
-                    bottom: 10,
-                    right: 12,
-                    child: Row(
-                      children: [
-                        if ((place.cuisine ?? '').trim().isNotEmpty)
-                          _Tag(text: place.cuisine!.trim()),
-                        const SizedBox(width: 8),
-                        if (place.priceLevel != null)
-                          _Tag(text: place.getPriceDisplay()),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(0.00),
+                        Colors.black.withOpacity(0.35),
                       ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+                // Heart button
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: _RestaurantFavoriteButton(
+                    restaurantId: place.id,
+                    restaurantData: {
+                      'name': place.name,
+                      'address': place.address,
+                      'cuisine': place.cuisine,
+                      'rating': place.rating,
+                      'priceLevel': place.priceLevel,
+                      'photoUrl': place.photoUrl ?? place.photoReference,
+                      'website': place.website,
+                    },
+                  ),
+                ),
+                if (place.isPopular)
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: _MiniBadge(
+                      icon: Icons.trending_up_rounded,
+                      text: 'Popular',
+                    ),
+                  ),
 
-            // ✅ FIX: No Expanded/Spacer here (Grid children must not use flex with unbounded constraints)
-            Padding(
+                Positioned(
+                  left: 12,
+                  bottom: 10,
+                  right: 12,
+                  child: Row(
+                    children: [
+                      if ((place.cuisine ?? '').trim().isNotEmpty)
+                        _Tag(text: place.cuisine!.trim()),
+                      const SizedBox(width: 8),
+                      if (place.priceLevel != null)
+                        _Tag(text: place.getPriceDisplay()),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Content area — Expanded gives the inner Column bounded height,
+          // which is what makes Spacer below work and keeps every card the
+          // exact same height regardless of name length.
+          Expanded(
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min, // ✅ important
                 children: [
-                  Text(
-                    place.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                      letterSpacing: -0.2,
-                      height: 1.15,
+                  // Fixed-height name slot: 1-line and 2-line names take the
+                  // same vertical space, so action rows align across the grid.
+                  SizedBox(
+                    height: 36,
+                    child: Text(
+                      place.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                        height: 1.15,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   if ((place.address ?? '').trim().isNotEmpty)
                     Text(
                       place.address!.trim(),
@@ -1406,7 +1484,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                       ),
                     ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1469,32 +1547,112 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 8),
+                  // Spacer fills the variable gap so the action icon row
+                  // always sits flush with the bottom of the card.
+                  const Spacer(),
 
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => _showRestaurantDetails(place, dist),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF111827),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
+                  // Action icon row — replaces the old "View" button.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildCardActionIcon(
+                        icon: Icons.directions_rounded,
+                        label: 'Route',
+                        color: const Color(0xFF2563EB),
+                        onTap: () => _openInMaps(place),
                       ),
-                      child: const Text(
-                        'View',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                      _buildCardActionIcon(
+                        icon: Icons.public_rounded,
+                        label: 'Website',
+                        color: const Color(0xFF7C3AED),
+                        onTap: () {
+                          final w = (place.website ?? '').trim();
+                          if (w.isNotEmpty) {
+                            _openWebsite(w);
+                          } else {
+                            _showActionUnavailable(
+                              'No website listed for this restaurant',
+                            );
+                          }
+                        },
                       ),
-                    ),
+                      _buildCardActionIcon(
+                        icon: Icons.call_rounded,
+                        label: 'Call',
+                        color: const Color(0xFF059669),
+                        onTap: () {
+                          final p = (place.phone ?? '').trim();
+                          if (p.isNotEmpty) {
+                            _callRestaurant(p);
+                          } else {
+                            _showActionUnavailable(
+                              'No phone number listed for this restaurant',
+                            );
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Compact action icon used inside the grid cards (Route / Website / Call).
+  /// Mirrors the accommodation screen's `_buildActionIcon` styling so the two
+  /// screens feel like part of the same design system.
+  Widget _buildCardActionIcon({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 16),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Friendly snackbar shown when an action icon is tapped but the restaurant
+  /// doesn't have that piece of contact info on file.
+  void _showActionUnavailable(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF64748B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -1571,7 +1729,7 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
       slivers: [
         SliverAppBar(
           pinned: true,
-          expandedHeight: 220,
+          expandedHeight: 175,
           backgroundColor: const Color(0xFFF8F9FF),
           elevation: 0,
           title: const Text(
@@ -1603,9 +1761,9 @@ class _AdvancedDiningScreenState extends State<AdvancedDiningScreen> {
             ),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.60,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: 0.68,
             ),
           ),
         ),
@@ -1812,10 +1970,10 @@ class _DiningHeroHeader extends StatelessWidget {
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.8,
-                  height: 2.0,
+                  height: 1.1,
                 ),
               ),
-              const SizedBox(height: 60),
+              const SizedBox(height: 18),
               _HeroSearchBar(
                 controller: controller,
                 onChanged: onChanged,
@@ -1931,9 +2089,9 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
     final photo = (place.photoUrl ?? '').trim();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.74,
-      minChildSize: 0.55,
-      maxChildSize: 0.96,
+      initialChildSize: 0.5, // Half-screen
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
       builder: (context, scrollController) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
@@ -1942,7 +2100,7 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
         child: SingleChildScrollView(
           controller: scrollController,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1960,7 +2118,7 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
-                    height: 230,
+                    height: 160,
                     width: double.infinity,
                     child: photo.isNotEmpty
                         ? CachedNetworkImage(
@@ -1986,7 +2144,7 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                           ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Text(
                   place.name,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -1994,7 +2152,7 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                     letterSpacing: -0.3,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 if ((place.address ?? '').trim().isNotEmpty)
                   Text(
                     place.address!.trim(),
@@ -2005,8 +2163,8 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                   ),
                 const SizedBox(height: 12),
                 Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     if (place.rating != null)
                       _pill(
@@ -2031,57 +2189,31 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
+
+                // ─── Quick action icons: Directions · Website · Call ───
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: onOpenMaps,
-                        icon: const Icon(Icons.map_rounded),
-                        label: const Text('Open in Maps'),
-                        style: ElevatedButton.styleFrom(
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
+                    _ActionIconButton(
+                      icon: Icons.directions_rounded,
+                      label: 'Directions',
+                      color: const Color(0xFF2563EB), // blue
+                      onTap: onOpenMaps,
                     ),
-                    if (onCall != null) ...[
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onCall,
-                          icon: const Icon(Icons.call_rounded),
-                          label: const Text('Call'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    _ActionIconButton(
+                      icon: Icons.public_rounded,
+                      label: 'Website',
+                      color: const Color(0xFF7C3AED), // purple
+                      onTap: onWebsite,
+                    ),
+                    _ActionIconButton(
+                      icon: Icons.call_rounded,
+                      label: 'Call',
+                      color: const Color(0xFF059669), // green
+                      onTap: onCall,
+                    ),
                   ],
                 ),
-                if (onWebsite != null) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onWebsite,
-                      icon: const Icon(Icons.public_rounded),
-                      label: const Text('Website'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -2110,6 +2242,66 @@ class _AdvancedRestaurantDetailModal extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Circular icon button with a label underneath. Used in the restaurant
+/// detail bottom sheet for Directions / Website / Call quick actions.
+/// Disables itself when [onTap] is null.
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final effectiveColor = enabled ? color : const Color(0xFF94A3B8);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: effectiveColor.withOpacity(0.12),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: effectiveColor.withOpacity(0.25),
+                  width: 1.2,
+                ),
+              ),
+              child: Icon(icon, color: effectiveColor, size: 28),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: enabled
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF94A3B8),
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

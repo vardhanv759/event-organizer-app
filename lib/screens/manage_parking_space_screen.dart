@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class ManageParkingSpaceScreen extends StatefulWidget {
   final String spaceId;
@@ -14,67 +16,95 @@ class ManageParkingSpaceScreen extends StatefulWidget {
       _ManageParkingSpaceScreenState();
 }
 
-class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
+class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
+    with SingleTickerProviderStateMixin {
   final _picker = ImagePicker();
   bool _uploading = false;
+  late TabController _tabController;
+  int _currentPhotoIndex = 0;
+  final PageController _photoPageController = PageController();
 
-  // ========== EDIT LOCATION ==========
-  Future<void> _editLocation(Map<String, dynamic> data) async {
-    final titleCtrl = TextEditingController(text: data['title'] ?? '');
-    final postcodeCtrl = TextEditingController(text: data['postcode'] ?? '');
-    final areaCtrl = TextEditingController(
-      text: data['approxArea'] ?? data['approx_area'] ?? data['area'] ?? '',
-    );
-    final addressCtrl = TextEditingController(
-      text: data['exactAddress'] ?? data['exact_address'] ?? '',
-    );
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
 
-    final result = await showDialog<bool>(
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _photoPageController.dispose();
+    super.dispose();
+  }
+
+  // ========== TOGGLE AVAILABILITY ==========
+  Future<void> _toggleAvailability(bool currentValue) async {
+    final newValue = !currentValue;
+    await FirebaseFirestore.instance
+        .collection('parking_spaces')
+        .doc(widget.spaceId)
+        .update({
+          'isActive': newValue,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+    _showSnackBar(newValue ? 'Space activated' : 'Space paused');
+  }
+
+  // ========== SHARE SPACE ==========
+  void _shareSpace(String title, String postcode) {
+    Share.share(
+      'Check out my parking space: $title in $postcode\nBook now on our app!',
+      subject: 'Parking Space: $title',
+    );
+  }
+
+  // ========== SHOW QR CODE ==========
+  void _showQRCode() {
+    showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
-          'Edit Location',
+          'Space QR Code',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Space Title',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: postcodeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Postcode',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: areaCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Area',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: addressCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Exact Address',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-            ],
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            QrImageView(
+              data: 'parking_space:${widget.spaceId}',
+              version: QrVersions.auto,
+              size: 200.0,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Scan to view this space',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ========== DUPLICATE SPACE ==========
+  Future<void> _duplicateSpace(Map<String, dynamic> data) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Duplicate Space?',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: const Text(
+          'This will create a copy of this space. You can edit it after creation.',
         ),
         actions: [
           TextButton(
@@ -86,24 +116,22 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4F46E5),
             ),
-            child: const Text('Save'),
+            child: const Text('Duplicate'),
           ),
         ],
       ),
     );
 
-    if (result == true) {
+    if (confirmed == true) {
+      final newSpace = Map<String, dynamic>.from(data);
+      newSpace.remove('id');
+      newSpace['createdAt'] = FieldValue.serverTimestamp();
+      newSpace['status'] = 'pending';
+      newSpace['title'] = '${data['title']} (Copy)';
       await FirebaseFirestore.instance
           .collection('parking_spaces')
-          .doc(widget.spaceId)
-          .update({
-            'title': titleCtrl.text.trim(),
-            'postcode': postcodeCtrl.text.trim(),
-            'approxArea': areaCtrl.text.trim(),
-            'exactAddress': addressCtrl.text.trim(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-      _showSnackBar('Location updated successfully');
+          .add(newSpace);
+      _showSnackBar('Space duplicated successfully');
     }
   }
 
@@ -122,7 +150,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
           title: const Text(
             'Edit Space Details',
@@ -133,7 +161,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: spaceType,
+                  value: spaceType,
                   decoration: const InputDecoration(
                     labelText: 'Space Type',
                     border: OutlineInputBorder(),
@@ -161,7 +189,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: size,
+                  value: size,
                   decoration: const InputDecoration(
                     labelText: 'Size',
                     border: OutlineInputBorder(),
@@ -184,7 +212,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: availability,
+                  value: availability,
                   decoration: const InputDecoration(
                     labelText: 'Availability',
                     border: OutlineInputBorder(),
@@ -240,24 +268,23 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
             'availability': availability,
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      _showSnackBar('Space details updated successfully');
+      _showSnackBar('Space details updated');
     }
   }
 
   // ========== EDIT AMENITIES ==========
   Future<void> _editAmenities(Map<String, dynamic> data) async {
-    final amenities = data['amenities'] as Map<String, dynamic>? ?? {};
-    bool isCovered = amenities['covered'] ?? false;
-    bool hasEVCharging = amenities['evCharging'] ?? false;
-    bool hasCCTV = amenities['cctv'] ?? false;
-    bool hasDisabledAccess = amenities['disabledAccess'] ?? false;
+    bool cctv = data['hasCCTV'] ?? data['has_cctv'] ?? false;
+    bool lighting = data['hasLighting'] ?? data['has_lighting'] ?? false;
+    bool covered = data['isCovered'] ?? data['is_covered'] ?? false;
+    bool evCharging = data['hasEVCharging'] ?? data['has_ev_charging'] ?? false;
 
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
           title: const Text(
             'Edit Amenities',
@@ -266,26 +293,25 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CheckboxListTile(
-                title: const Text('Covered/Sheltered'),
-                value: isCovered,
-                onChanged: (v) => setState(() => isCovered = v ?? false),
+              SwitchListTile(
+                title: const Text('CCTV'),
+                value: cctv,
+                onChanged: (v) => setState(() => cctv = v),
               ),
-              CheckboxListTile(
+              SwitchListTile(
+                title: const Text('Lighting'),
+                value: lighting,
+                onChanged: (v) => setState(() => lighting = v),
+              ),
+              SwitchListTile(
+                title: const Text('Covered'),
+                value: covered,
+                onChanged: (v) => setState(() => covered = v),
+              ),
+              SwitchListTile(
                 title: const Text('EV Charging'),
-                value: hasEVCharging,
-                onChanged: (v) => setState(() => hasEVCharging = v ?? false),
-              ),
-              CheckboxListTile(
-                title: const Text('CCTV/Security'),
-                value: hasCCTV,
-                onChanged: (v) => setState(() => hasCCTV = v ?? false),
-              ),
-              CheckboxListTile(
-                title: const Text('Disabled Access'),
-                value: hasDisabledAccess,
-                onChanged: (v) =>
-                    setState(() => hasDisabledAccess = v ?? false),
+                value: evCharging,
+                onChanged: (v) => setState(() => evCharging = v),
               ),
             ],
           ),
@@ -311,60 +337,54 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
           .collection('parking_spaces')
           .doc(widget.spaceId)
           .update({
-            'amenities': {
-              'covered': isCovered,
-              'evCharging': hasEVCharging,
-              'cctv': hasCCTV,
-              'disabledAccess': hasDisabledAccess,
-            },
+            'hasCCTV': cctv,
+            'hasLighting': lighting,
+            'isCovered': covered,
+            'hasEVCharging': evCharging,
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      _showSnackBar('Amenities updated successfully');
+      _showSnackBar('Amenities updated');
     }
   }
 
   // ========== EDIT ADDITIONAL INFO ==========
   Future<void> _editAdditionalInfo(Map<String, dynamic> data) async {
     final accessCtrl = TextEditingController(
-      text: data['accessInstructions'] ?? '',
+      text: data['accessInstructions'] ?? data['access_instructions'] ?? '',
     );
     final restrictionsCtrl = TextEditingController(
-      text: data['vehicleRestrictions'] ?? '',
+      text: data['vehicleRestrictions'] ?? data['vehicle_restrictions'] ?? '',
     );
 
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Edit Additional Info',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: accessCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Access Instructions',
-                  border: OutlineInputBorder(),
-                  hintText: 'e.g., Gate code 1234, Enter from side entrance',
-                ),
-                maxLines: 3,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: accessCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Access Instructions',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: restrictionsCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Vehicle Restrictions',
-                  border: OutlineInputBorder(),
-                  hintText: 'e.g., Max height 2.1m, No commercial vehicles',
-                ),
-                maxLines: 2,
+              maxLines: 3,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: restrictionsCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Vehicle Restrictions',
+                border: OutlineInputBorder(),
               ),
-            ],
-          ),
+              maxLines: 3,
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -391,113 +411,46 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
             'vehicleRestrictions': restrictionsCtrl.text.trim(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      _showSnackBar('Additional info updated successfully');
+      _showSnackBar('Additional info updated');
     }
   }
 
   // ========== ADD PHOTO ==========
   Future<void> _addPhoto() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    setState(() => _uploading = true);
     try {
-      final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Color(0xFF4F46E5)),
-                title: const Text(
-                  'Take Photo',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                onTap: () => Navigator.pop(context, ImageSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.photo_library,
-                  color: Color(0xFF4F46E5),
-                ),
-                title: const Text(
-                  'Choose from Gallery',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                onTap: () => Navigator.pop(context, ImageSource.gallery),
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
+      final file = File(pickedFile.path);
+      final storageRef = FirebaseStorage.instance.ref().child(
+        'parking_spaces/${widget.spaceId}/${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
-
-      if (source == null) return;
-
-      final XFile? pickedFile = await _picker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
-
-      if (pickedFile == null) return;
-
-      setState(() => _uploading = true);
-
-      final uid = FirebaseAuth.instance.currentUser!.uid;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final ref = FirebaseStorage.instance.ref().child(
-        'parking_spaces/$uid/space_${timestamp}_${DateTime.now().microsecond}.jpg',
-      );
-
-      await ref.putFile(File(pickedFile.path));
-      final url = await ref.getDownloadURL();
-
-      final doc = await FirebaseFirestore.instance
-          .collection('parking_spaces')
-          .doc(widget.spaceId)
-          .get();
-      final currentPhotos = List<String>.from(doc.data()?['photoUrls'] ?? []);
-      currentPhotos.add(url);
-
+      await storageRef.putFile(file);
+      final url = await storageRef.getDownloadURL();
       await FirebaseFirestore.instance
           .collection('parking_spaces')
           .doc(widget.spaceId)
           .update({
-            'photoUrls': currentPhotos,
+            'photoUrls': FieldValue.arrayUnion([url]),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-
-      _showSnackBar('Photo added successfully');
+      _showSnackBar('Photo added');
     } catch (e) {
-      _showSnackBar('Failed to add photo: $e', isError: true);
+      _showSnackBar('Error: $e');
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      setState(() => _uploading = false);
     }
   }
 
   // ========== DELETE PHOTO ==========
-  Future<void> _deletePhoto(String photoUrl, List photoUrls) async {
-    final confirm = await showDialog<bool>(
+  Future<void> _deletePhoto(String url) async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Delete Photo',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        content: const Text('Are you sure you want to delete this photo?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Photo?'),
+        content: const Text('This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -505,43 +458,36 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      final updatedPhotos = List<String>.from(photoUrls)..remove(photoUrl);
+    if (confirmed == true) {
       await FirebaseFirestore.instance
           .collection('parking_spaces')
           .doc(widget.spaceId)
           .update({
-            'photoUrls': updatedPhotos,
+            'photoUrls': FieldValue.arrayRemove([url]),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-      _showSnackBar('Photo deleted successfully');
+      _showSnackBar('Photo deleted');
     }
   }
 
   // ========== DELETE SPACE ==========
   Future<void> _deleteSpace() async {
-    final confirm = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
-          'Delete Parking Space',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          'Delete Space?',
+          style: TextStyle(fontWeight: FontWeight.w900, color: Colors.red),
         ),
-        content: const Text(
-          'Are you sure you want to delete this parking space?\n\n'
-          'This action cannot be undone. The space will be permanently removed from the database.',
-          style: TextStyle(height: 1.4),
-        ),
+        content: const Text('This is permanent and cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -549,245 +495,187 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-            ),
-            child: const Text('Delete Permanently'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete Forever'),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('parking_spaces')
-            .doc(widget.spaceId)
-            .delete();
-        if (mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Parking space deleted successfully'),
-              backgroundColor: Color(0xFF10B981),
-            ),
-          );
-        }
-      } catch (e) {
-        _showSnackBar('Failed to delete: $e', isError: true);
-      }
+    if (confirmed == true) {
+      await FirebaseFirestore.instance
+          .collection('parking_spaces')
+          .doc(widget.spaceId)
+          .delete();
+      if (mounted) Navigator.pop(context);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: isError
-              ? const Color(0xFFEF4444)
-              : const Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ref = FirebaseFirestore.instance
-        .collection('parking_spaces')
-        .doc(widget.spaceId);
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FF),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: ref.snapshots(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-              ),
-            );
-          }
-          if (!snap.hasData || !snap.data!.exists) {
-            return const Center(child: Text('Space not found'));
-          }
-
-          final data = snap.data!.data()!;
-
-          // Support both old and new field names
-          final title = (data['title'] ?? 'Parking space').toString();
-          final postcode = (data['postcode'] ?? '').toString();
-          final area =
-              ((data['approxArea'] ?? data['approx_area'] ?? data['area']) ??
-                      '')
-                  .toString();
-          final exactAddress =
-              (data['exactAddress'] ?? data['exact_address'] ?? '').toString();
-          final spaceType =
-              ((data['spaceType'] ?? data['space_type'] ?? data['type']) ??
-                      'driveway')
-                  .toString();
-          final size = ((data['size'] ?? data['space_size']) ?? 'medium')
-              .toString();
-          final hourlyRateValue =
-              data['hourlyRate'] ??
-              data['hourly_rate_gbp'] ??
-              data['hourly_rate'];
-          final hourlyRate = (hourlyRateValue is num)
-              ? hourlyRateValue.toDouble()
-              : 0.0;
-          final status = ((data['status'] ?? data['status_lc']) ?? 'pending')
-              .toString();
-          final approved = data['approved'] ?? false;
-          final availability = (data['availability'] ?? '24/7').toString();
-
-          // Amenities
-          final amenities = data['amenities'] as Map<String, dynamic>? ?? {};
-          final isCovered = amenities['covered'] ?? false;
-          final hasEVCharging = amenities['evCharging'] ?? false;
-          final hasCCTV = amenities['cctv'] ?? false;
-          final hasDisabledAccess = amenities['disabledAccess'] ?? false;
-
-          // Additional info
-          final accessInstructions = (data['accessInstructions'] ?? '')
-              .toString();
-          final vehicleRestrictions = (data['vehicleRestrictions'] ?? '')
-              .toString();
-
-          // Photos
-          final photoUrls =
-              (data['photoUrls'] ?? data['photo_urls'] ?? []) as List;
-
-          final isApproved =
-              (status.toLowerCase() == 'approved' && approved == true);
-
-          return Stack(
-            children: [
-              CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  _buildAppBar(title, isApproved, status),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        // Space Photos
-                        _buildPhotosSection(photoUrls),
-                        const SizedBox(height: 20),
-
-                        // Location
-                        _buildLocationSection(
-                          data: data,
-                          title: title,
-                          postcode: postcode,
-                          area: area,
-                          exactAddress: exactAddress,
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Space Details
-                        _buildSpaceDetailsSection(
-                          data: data,
-                          spaceType: spaceType,
-                          size: size,
-                          hourlyRate: hourlyRate,
-                          availability: availability,
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Amenities
-                        if (isCovered ||
-                            hasEVCharging ||
-                            hasCCTV ||
-                            hasDisabledAccess)
-                          _buildAmenitiesSection(
-                            data: data,
-                            isCovered: isCovered,
-                            hasEVCharging: hasEVCharging,
-                            hasCCTV: hasCCTV,
-                            hasDisabledAccess: hasDisabledAccess,
-                          ),
-                        if (isCovered ||
-                            hasEVCharging ||
-                            hasCCTV ||
-                            hasDisabledAccess)
-                          const SizedBox(height: 20),
-
-                        // Additional Info
-                        _buildAdditionalInfoSection(
-                          data: data,
-                          accessInstructions: accessInstructions,
-                          vehicleRestrictions: vehicleRestrictions,
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Delete Button
-                        _buildDeleteButton(),
-                      ]),
-                    ),
-                  ),
-                ],
-              ),
-              if (_uploading)
-                Container(
-                  color: Colors.black54,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
-  Widget _buildAppBar(String title, bool isApproved, String status) {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('parking_spaces')
+          .doc(widget.spaceId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(child: Text('Error: ${snapshot.error}')),
+          );
+        }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final data = snapshot.data!.data()!;
+        final title = data['title'] ?? 'Untitled Space';
+        final postcode = data['postcode'] ?? '';
+        final area =
+            data['approxArea'] ?? data['approx_area'] ?? data['area'] ?? '';
+        final exactAddress =
+            data['exactAddress'] ?? data['exact_address'] ?? '';
+        final spaceType =
+            data['spaceType'] ??
+            data['space_type'] ??
+            data['type'] ??
+            'driveway';
+        final size = data['size'] ?? data['space_size'] ?? 'medium';
+        final hourlyRate =
+            (data['hourlyRate'] ?? data['hourly_rate_gbp'] ?? 0.0) as num;
+        final availability = data['availability'] ?? '24/7';
+        final status = (data['status'] ?? 'pending').toString().toLowerCase();
+        final isApproved = status == 'approved';
+        final isActive = data['isActive'] ?? true;
+        final List<dynamic> photoUrls = data['photoUrls'] ?? [];
+        final hasCCTV = data['hasCCTV'] ?? data['has_cctv'] ?? false;
+        final hasLighting =
+            data['hasLighting'] ?? data['has_lighting'] ?? false;
+        final isCovered = data['isCovered'] ?? data['is_covered'] ?? false;
+        final hasEVCharging =
+            data['hasEVCharging'] ?? data['has_ev_charging'] ?? false;
+        final accessInstructions =
+            data['accessInstructions'] ?? data['access_instructions'] ?? '';
+        final vehicleRestrictions =
+            data['vehicleRestrictions'] ?? data['vehicle_restrictions'] ?? '';
+
+        // Analytics (mock data - replace with real)
+        final totalViews = data['totalViews'] ?? 127;
+        final totalBookings = data['totalBookings'] ?? 8;
+        final totalEarnings = data['totalEarnings'] ?? 240.0;
+        final rating = data['rating'] ?? 4.8;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8F9FF),
+          body: CustomScrollView(
+            slivers: [
+              _buildHeroHeader(title, status, isApproved, isActive, photoUrls),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _buildQuickActions(isActive, title, postcode, data),
+                      const SizedBox(height: 20),
+                      _buildAnalytics(
+                        totalViews,
+                        totalBookings,
+                        totalEarnings,
+                        rating,
+                      ),
+                      const SizedBox(height: 24),
+                      _buildTabs(),
+                      const SizedBox(height: 20),
+                      _buildTabContent(
+                        data,
+                        title,
+                        postcode,
+                        area,
+                        exactAddress,
+                        spaceType,
+                        size,
+                        hourlyRate.toDouble(),
+                        availability,
+                        photoUrls,
+                        hasCCTV,
+                        hasLighting,
+                        isCovered,
+                        hasEVCharging,
+                        accessInstructions,
+                        vehicleRestrictions,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeroHeader(
+    String title,
+    String status,
+    bool isApproved,
+    bool isActive,
+    List photoUrls,
+  ) {
     return SliverAppBar(
+      expandedHeight: 280,
       pinned: true,
-      stretch: true,
-      expandedHeight: 200,
-      elevation: 0,
       backgroundColor: Colors.transparent,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-        onPressed: () => Navigator.pop(context),
-      ),
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
           children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF6366F1),
-                    Color(0xFF8B5CF6),
-                    Color(0xFFEC4899),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            if (photoUrls.isNotEmpty)
+              PageView.builder(
+                controller: _photoPageController,
+                onPageChanged: (index) =>
+                    setState(() => _currentPhotoIndex = index),
+                itemCount: photoUrls.length,
+                itemBuilder: (context, index) =>
+                    Image.network(photoUrls[index], fit: BoxFit.cover),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                  ),
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.local_parking,
+                    size: 80,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              right: -50,
-              top: -50,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.1),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.7),
+                  ],
                 ),
               ),
             ),
@@ -800,12 +688,6 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(
-                          Icons.settings_rounded,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                        const SizedBox(width: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -817,40 +699,91 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
                                 : const Color(0xFFF59E0B),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
-                            status.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isApproved ? Icons.verified : Icons.pending,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                status.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        if (!isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.pause,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'PAUSED',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      'Manage Space',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                     Text(
                       title,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        shadows: [
+                          Shadow(color: Colors.black38, blurRadius: 10),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
+                    if (photoUrls.length > 1) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: List.generate(
+                          photoUrls.length,
+                          (index) => Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            width: index == _currentPhotoIndex ? 24 : 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: index == _currentPhotoIndex
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -861,129 +794,226 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
     );
   }
 
-  Widget _buildPhotosSection(List photoUrls) {
+  Widget _buildQuickActions(
+    bool isActive,
+    String title,
+    String postcode,
+    Map<String, dynamic> data,
+  ) {
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'Quick Actions',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _SectionHeader(
-                  icon: Icons.photo_camera_rounded,
-                  title: 'Space Photos',
-                  subtitle:
-                      '${photoUrls.length} photo${photoUrls.length != 1 ? 's' : ''}',
+                child: _QuickActionButton(
+                  icon: isActive ? Icons.pause : Icons.play_arrow,
+                  label: isActive ? 'Pause' : 'Activate',
+                  color: isActive ? Colors.orange : const Color(0xFF10B981),
+                  onTap: () => _toggleAvailability(isActive),
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: _addPhoto,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4F46E5),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                ),
-                icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
-                label: const Text(
-                  'Add',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _QuickActionButton(
+                  icon: Icons.share_rounded,
+                  label: 'Share',
+                  color: const Color(0xFF6366F1),
+                  onTap: () => _shareSpace(title, postcode),
                 ),
               ),
             ],
           ),
-          if (photoUrls.isNotEmpty) const SizedBox(height: 16),
-          if (photoUrls.isNotEmpty)
-            SizedBox(
-              height: 120,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: photoUrls.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
-                itemBuilder: (context, index) {
-                  return Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          width: 120,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Image.network(
-                            photoUrls[index].toString(),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Center(
-                              child: Icon(Icons.broken_image_rounded, size: 40),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: GestureDetector(
-                          onTap: () => _deletePhoto(
-                            photoUrls[index].toString(),
-                            photoUrls,
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEF4444),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.close_rounded,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickActionButton(
+                  icon: Icons.qr_code,
+                  label: 'QR Code',
+                  color: const Color(0xFF8B5CF6),
+                  onTap: _showQRCode,
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _QuickActionButton(
+                  icon: Icons.copy_rounded,
+                  label: 'Duplicate',
+                  color: const Color(0xFF0EA5E9),
+                  onTap: () => _duplicateSpace(data),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildLocationSection({
-    required Map<String, dynamic> data,
-    required String title,
-    required String postcode,
-    required String area,
-    required String exactAddress,
-  }) {
+  Widget _buildAnalytics(
+    int views,
+    int bookings,
+    double earnings,
+    double rating,
+  ) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 14,
+      crossAxisSpacing: 14,
+      childAspectRatio: 1.5,
+      children: [
+        _AnalyticsCard(
+          icon: Icons.visibility_rounded,
+          label: 'Views',
+          value: views.toString(),
+          color: const Color(0xFF6366F1),
+          trend: '+12%',
+        ),
+        _AnalyticsCard(
+          icon: Icons.event_available_rounded,
+          label: 'Bookings',
+          value: bookings.toString(),
+          color: const Color(0xFF10B981),
+          trend: '+5',
+        ),
+        _AnalyticsCard(
+          icon: Icons.payments_rounded,
+          label: 'Earnings',
+          value: '£${earnings.toStringAsFixed(0)}',
+          color: const Color(0xFFF59E0B),
+          trend: '+£48',
+        ),
+        _AnalyticsCard(
+          icon: Icons.star_rounded,
+          label: 'Rating',
+          value: rating.toStringAsFixed(1),
+          color: const Color(0xFFEF4444),
+          trend: rating >= 4.5 ? 'Excellent' : 'Good',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabs() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: TabBar(
+        controller: _tabController,
+        labelColor: Colors.white,
+        unselectedLabelColor: const Color(0xFF64748B),
+        indicator: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        indicatorPadding: const EdgeInsets.all(6),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+        tabs: const [
+          Tab(text: 'Details'),
+          Tab(text: 'Photos'),
+          Tab(text: 'Settings'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabContent(
+    Map<String, dynamic> data,
+    String title,
+    String postcode,
+    String area,
+    String exactAddress,
+    String spaceType,
+    String size,
+    double hourlyRate,
+    String availability,
+    List photoUrls,
+    bool hasCCTV,
+    bool hasLighting,
+    bool isCovered,
+    bool hasEVCharging,
+    String accessInstructions,
+    String vehicleRestrictions,
+  ) {
+    return SizedBox(
+      height: 600,
+      child: TabBarView(
+        controller: _tabController,
+        children: [
+          SingleChildScrollView(
+            child: Column(
+              children: [
+                _buildLocationSection(title, postcode, area, exactAddress),
+                const SizedBox(height: 16),
+                _buildSpaceDetailsSection(
+                  data,
+                  spaceType,
+                  size,
+                  hourlyRate,
+                  availability,
+                ),
+                const SizedBox(height: 16),
+                _buildAmenitiesSection(
+                  data,
+                  hasCCTV,
+                  hasLighting,
+                  isCovered,
+                  hasEVCharging,
+                ),
+                const SizedBox(height: 16),
+                _buildAdditionalInfoSection(
+                  data,
+                  accessInstructions,
+                  vehicleRestrictions,
+                ),
+              ],
+            ),
+          ),
+          _buildPhotosTab(photoUrls),
+          _buildSettingsTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationSection(
+    String title,
+    String postcode,
+    String area,
+    String exactAddress,
+  ) {
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _SectionHeader(
-                  icon: Icons.location_on_rounded,
-                  title: 'Location',
-                  subtitle: 'Address details',
-                ),
-              ),
-              IconButton(
-                onPressed: () => _editLocation(data),
-                icon: const Icon(Icons.edit_rounded, color: Color(0xFF4F46E5)),
-                tooltip: 'Edit Location',
-              ),
-            ],
+          _SectionHeader(
+            icon: Icons.location_on_rounded,
+            title: 'Location',
+            subtitle: 'Address details (read-only)',
           ),
           const SizedBox(height: 16),
           _InfoRow(label: 'Title', value: title, icon: Icons.title_rounded),
@@ -1006,13 +1036,13 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
     );
   }
 
-  Widget _buildSpaceDetailsSection({
-    required Map<String, dynamic> data,
-    required String spaceType,
-    required String size,
-    required double hourlyRate,
-    required String availability,
-  }) {
+  Widget _buildSpaceDetailsSection(
+    Map<String, dynamic> data,
+    String spaceType,
+    String size,
+    double hourlyRate,
+    String availability,
+  ) {
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1021,7 +1051,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
             children: [
               Expanded(
                 child: _SectionHeader(
-                  icon: Icons.local_parking_rounded,
+                  icon: Icons.info_outline_rounded,
                   title: 'Space Details',
                   subtitle: 'Type, size, and pricing',
                 ),
@@ -1029,20 +1059,19 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
               IconButton(
                 onPressed: () => _editSpaceDetails(data),
                 icon: const Icon(Icons.edit_rounded, color: Color(0xFF4F46E5)),
-                tooltip: 'Edit Details',
               ),
             ],
           ),
           const SizedBox(height: 16),
           _InfoRow(
-            label: 'Type',
-            value: spaceType.replaceAll('_', ' ').toUpperCase(),
-            icon: Icons.category_rounded,
+            label: 'Space Type',
+            value: _formatSpaceType(spaceType),
+            icon: Icons.local_parking_rounded,
           ),
           const SizedBox(height: 12),
           _InfoRow(
             label: 'Size',
-            value: size[0].toUpperCase() + size.substring(1),
+            value: size.toUpperCase(),
             icon: Icons.straighten_rounded,
           ),
           const SizedBox(height: 12),
@@ -1056,45 +1085,20 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
           _InfoRow(
             label: 'Availability',
             value: _formatAvailability(availability),
-            icon: Icons.access_time_rounded,
+            icon: Icons.schedule_rounded,
           ),
         ],
       ),
     );
   }
 
-  String _formatAvailability(String availability) {
-    switch (availability) {
-      case '24/7':
-        return '24/7 (Always Available)';
-      case 'weekdays_only':
-        return 'Weekdays Only (Mon-Fri)';
-      case 'weekends_only':
-        return 'Weekends Only (Sat-Sun)';
-      case 'event_days_only':
-        return 'Event Days Only';
-      default:
-        return availability;
-    }
-  }
-
-  Widget _buildAmenitiesSection({
-    required Map<String, dynamic> data,
-    required bool isCovered,
-    required bool hasEVCharging,
-    required bool hasCCTV,
-    required bool hasDisabledAccess,
-  }) {
-    final amenitiesList = [
-      if (isCovered)
-        {'icon': Icons.roofing_rounded, 'label': 'Covered/Sheltered'},
-      if (hasEVCharging)
-        {'icon': Icons.ev_station_rounded, 'label': 'EV Charging'},
-      if (hasCCTV) {'icon': Icons.videocam_rounded, 'label': 'CCTV/Security'},
-      if (hasDisabledAccess)
-        {'icon': Icons.accessible_rounded, 'label': 'Disabled Access'},
-    ];
-
+  Widget _buildAmenitiesSection(
+    Map<String, dynamic> data,
+    bool hasCCTV,
+    bool hasLighting,
+    bool isCovered,
+    bool hasEVCharging,
+  ) {
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1105,67 +1109,41 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
                 child: _SectionHeader(
                   icon: Icons.star_rounded,
                   title: 'Amenities',
-                  subtitle:
-                      '${amenitiesList.length} feature${amenitiesList.length != 1 ? 's' : ''}',
+                  subtitle: 'Features and facilities',
                 ),
               ),
               IconButton(
                 onPressed: () => _editAmenities(data),
                 icon: const Icon(Icons.edit_rounded, color: Color(0xFF4F46E5)),
-                tooltip: 'Edit Amenities',
               ),
             ],
           ),
           const SizedBox(height: 16),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: amenitiesList.map((amenity) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              if (hasCCTV) _amenityChip(Icons.videocam, 'CCTV'),
+              if (hasLighting) _amenityChip(Icons.lightbulb, 'Lighting'),
+              if (isCovered) _amenityChip(Icons.roofing, 'Covered'),
+              if (hasEVCharging) _amenityChip(Icons.ev_station, 'EV Charging'),
+              if (!hasCCTV && !hasLighting && !isCovered && !hasEVCharging)
+                const Text(
+                  'No amenities',
+                  style: TextStyle(color: Colors.grey),
                 ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFF4F46E5).withOpacity(0.3),
-                    width: 1.5,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      amenity['icon'] as IconData,
-                      color: const Color(0xFF4F46E5),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      amenity['label'] as String,
-                      style: const TextStyle(
-                        color: Color(0xFF4F46E5),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAdditionalInfoSection({
-    required Map<String, dynamic> data,
-    required String accessInstructions,
-    required String vehicleRestrictions,
-  }) {
+  Widget _buildAdditionalInfoSection(
+    Map<String, dynamic> data,
+    String accessInstructions,
+    String vehicleRestrictions,
+  ) {
     return _GlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1174,15 +1152,14 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
             children: [
               Expanded(
                 child: _SectionHeader(
-                  icon: Icons.info_outline_rounded,
-                  title: 'Additional Information',
+                  icon: Icons.description_rounded,
+                  title: 'Additional Info',
                   subtitle: 'Access and restrictions',
                 ),
               ),
               IconButton(
                 onPressed: () => _editAdditionalInfo(data),
                 icon: const Icon(Icons.edit_rounded, color: Color(0xFF4F46E5)),
-                tooltip: 'Edit Info',
               ),
             ],
           ),
@@ -1207,48 +1184,221 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
     );
   }
 
-  Widget _buildDeleteButton() {
-    return _GlassCard(
-      child: InkWell(
-        onTap: _deleteSpace,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.delete_forever_rounded,
-                  color: Color(0xFFEF4444),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Text(
-                  'Delete Parking Space',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFFEF4444),
+  Widget _buildPhotosTab(List photoUrls) {
+    return SingleChildScrollView(
+      child: _GlassCard(
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _SectionHeader(
+                    icon: Icons.photo_camera_rounded,
+                    title: 'Photos',
+                    subtitle:
+                        '${photoUrls.length} photo${photoUrls.length != 1 ? 's' : ''}',
                   ),
                 ),
+                ElevatedButton.icon(
+                  onPressed: _uploading ? null : _addPhoto,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: _uploading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                  label: Text(_uploading ? 'Uploading...' : 'Add'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (photoUrls.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'No photos yet',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Add photos to showcase your space',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 14,
+                  crossAxisSpacing: 14,
+                  childAspectRatio: 1.2,
+                ),
+                itemCount: photoUrls.length,
+                itemBuilder: (context, index) => Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.network(
+                        photoUrls[index],
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () => _deletePhoto(photoUrls[index]),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.delete_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: Color(0xFFEF4444),
-                size: 18,
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildSettingsTab() {
+    return SingleChildScrollView(
+      child: _GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SectionHeader(
+              icon: Icons.settings_rounded,
+              title: 'Settings',
+              subtitle: 'Manage your space',
+            ),
+            const SizedBox(height: 20),
+            InkWell(
+              onTap: _deleteSpace,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFEF4444).withOpacity(0.3),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.delete_forever_rounded,
+                      color: Color(0xFFEF4444),
+                      size: 24,
+                    ),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Delete Parking Space',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFFEF4444),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: Color(0xFFEF4444),
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _amenityChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4F46E5).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: const Color(0xFF4F46E5), size: 18),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF4F46E5),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSpaceType(String type) => type
+      .split('_')
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+  String _formatAvailability(String availability) {
+    switch (availability) {
+      case 'weekdays_only':
+        return 'Weekdays Only (Mon-Fri)';
+      case 'weekends_only':
+        return 'Weekends Only (Sat-Sun)';
+      case 'event_days_only':
+        return 'Event Days Only';
+      default:
+        return '24/7 (Always Available)';
+    }
   }
 }
 
@@ -1257,80 +1407,71 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen> {
 class _GlassCard extends StatelessWidget {
   final Widget child;
   const _GlassCard({required this.child});
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.06),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    ),
+    child: child,
+  );
 }
 
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-
   const _SectionHeader({
     required this.icon,
     required this.title,
     required this.subtitle,
   });
-
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF4F46E5).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: const Color(0xFF4F46E5), size: 22),
+  Widget build(BuildContext context) => Row(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4F46E5).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
-                  letterSpacing: -0.2,
-                ),
+        child: Icon(icon, color: const Color(0xFF4F46E5), size: 22),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
-                  height: 1.3,
-                ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
-    );
-  }
+      ),
+    ],
+  );
 }
 
 class _InfoRow extends StatelessWidget {
@@ -1338,46 +1479,161 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color? valueColor;
-
   const _InfoRow({
     required this.label,
     required this.value,
     required this.icon,
     this.valueColor,
   });
-
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: const Color(0xFF94A3B8), size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade600,
-                ),
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: const Color(0xFF94A3B8), size: 20),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade600,
               ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: valueColor ?? const Color(0xFF0F172A),
-                ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: valueColor ?? const Color(0xFF0F172A),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
           ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _AnalyticsCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final String trend;
+  const _AnalyticsCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.trend,
+  });
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: color.withOpacity(0.3),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
         ),
       ],
-    );
-  }
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Icon(icon, color: Colors.white, size: 28),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                trend,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.9),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 }

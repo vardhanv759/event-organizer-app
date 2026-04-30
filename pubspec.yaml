@@ -56,6 +56,9 @@ dependencies:
   cloud_functions: ^6.0.5
   firebase_functions: 0.0.1-dev
   intl: ^0.18.1
+  flutter_cache_manager: ^3.4.1
+  share_plus: ^12.0.2
+  qr_flutter: ^4.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

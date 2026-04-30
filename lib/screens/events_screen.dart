@@ -295,7 +295,7 @@ class _EventsListScreenState extends State<EventsListScreen>
                               subtitle:
                                   '${futureEvents.length} upcoming event${futureEvents.length == 1 ? '' : 's'}',
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 6),
                             // Grid View for Future Events (2 per row)
                             GridView.builder(
                               shrinkWrap: true,

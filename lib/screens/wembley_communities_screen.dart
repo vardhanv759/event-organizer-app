@@ -87,7 +87,7 @@ class WembleyCommunitiesScreen extends StatelessWidget {
         slivers: [
           // Premium Gradient Header
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 218,
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF6366F1),
