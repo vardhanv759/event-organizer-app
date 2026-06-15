@@ -6,7 +6,9 @@ import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SavedEventsScreen extends StatefulWidget {
-  const SavedEventsScreen({super.key});
+  final bool embedded;
+
+  const SavedEventsScreen({super.key, this.embedded = false});
 
   @override
   State<SavedEventsScreen> createState() => _SavedEventsScreenState();
@@ -96,29 +98,36 @@ class _SavedEventsScreenState extends State<SavedEventsScreen> {
 
     if (uid == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Saved Events')),
+        appBar: widget.embedded
+            ? null
+            : AppBar(title: const Text('Saved Events')),
         body: const Center(child: Text('Please log in to view saved events')),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FF),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF8F9FF),
-        elevation: 0,
-        title: const Text(
-          'Saved Events',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.2,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0F172A)),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              backgroundColor: const Color(0xFFF8F9FF),
+              elevation: 0,
+              title: const Text(
+                'Saved Events',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
+                ),
+              ),
+              leading: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: Color(0xFF0F172A),
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _db
             .collection('users')

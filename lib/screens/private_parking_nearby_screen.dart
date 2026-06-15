@@ -16,6 +16,12 @@ class _PrivateParkingNearbyScreenState
   bool _grid = true;
   String _spaceType = 'All';
 
+  // Amenity filters
+  bool _filterEVCharging = false;
+  bool _filterCCTV = false;
+  bool _filterLighting = false;
+  bool _filterCovered = false;
+
   final _types = const [
     'All',
     'driveway',
@@ -63,6 +69,17 @@ class _PrivateParkingNearbyScreenState
               onChanged: (v) => setState(() => _spaceType = v),
             ),
             const SizedBox(height: 12),
+            _AmenityFilterSection(
+              evCharging: _filterEVCharging,
+              cctv: _filterCCTV,
+              lighting: _filterLighting,
+              covered: _filterCovered,
+              onEVChargingChanged: (v) => setState(() => _filterEVCharging = v),
+              onCCTVChanged: (v) => setState(() => _filterCCTV = v),
+              onLightingChanged: (v) => setState(() => _filterLighting = v),
+              onCoveredChanged: (v) => setState(() => _filterCovered = v),
+            ),
+            const SizedBox(height: 12),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _stream(),
@@ -82,12 +99,37 @@ class _PrivateParkingNearbyScreenState
                         .toLowerCase();
                     if (status != 'approved') return false;
 
-                    if (_spaceType == 'All') return true;
-                    final t = (m['space_type'] ?? '')
-                        .toString()
-                        .trim()
-                        .toLowerCase();
-                    return t == _spaceType.toLowerCase();
+                    // Filter by space type
+                    if (_spaceType != 'All') {
+                      final t = (m['space_type'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
+                      if (t != _spaceType.toLowerCase()) return false;
+                    }
+
+                    // Filter by amenities
+                    if (_filterEVCharging) {
+                      final hasEV =
+                          m['hasEVCharging'] ?? m['has_ev_charging'] ?? false;
+                      if (hasEV != true) return false;
+                    }
+                    if (_filterCCTV) {
+                      final hasCCTV = m['hasCCTV'] ?? m['has_cctv'] ?? false;
+                      if (hasCCTV != true) return false;
+                    }
+                    if (_filterLighting) {
+                      final hasLighting =
+                          m['hasLighting'] ?? m['has_lighting'] ?? false;
+                      if (hasLighting != true) return false;
+                    }
+                    if (_filterCovered) {
+                      final isCovered =
+                          m['isCovered'] ?? m['is_covered'] ?? false;
+                      if (isCovered != true) return false;
+                    }
+
+                    return true;
                   }).toList();
 
                   // Sort newest first (client-side)
@@ -257,22 +299,61 @@ class _SpaceCardPremium extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 88, // ✅ slightly reduced
+                height: 88,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
                 ),
-                child: const Center(
-                  child: Icon(
-                    Icons.local_parking_rounded,
-                    color: Colors.white,
-                    size: 38,
-                  ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: () {
+                    // Get photo URLs from data
+                    final photos =
+                        data['photoUrls'] ?? data['photo_urls'] ?? [];
+                    if (photos is List && photos.isNotEmpty) {
+                      // Show first photo
+                      return Image.network(
+                        photos[0],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          // Fallback to gradient + icon if image fails
+                          return Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.local_parking_rounded,
+                                color: Colors.white,
+                                size: 38,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }
+                    // Fallback to gradient + icon if no photos
+                    return Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.local_parking_rounded,
+                          color: Colors.white,
+                          size: 38,
+                        ),
+                      ),
+                    );
+                  }(),
                 ),
               ),
               const SizedBox(height: 10),
@@ -367,21 +448,57 @@ class _SpaceListTilePremium extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              height: 54,
-              width: 54,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.local_parking_rounded,
-                color: Colors.white,
-              ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: () {
+                // Get photo URLs from data
+                final photos = data['photoUrls'] ?? data['photo_urls'] ?? [];
+                if (photos is List && photos.isNotEmpty) {
+                  // Show first photo
+                  return Image.network(
+                    photos[0],
+                    height: 54,
+                    width: 54,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Fallback to gradient + icon if image fails
+                      return Container(
+                        height: 54,
+                        width: 54,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.local_parking_rounded,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
+                  );
+                }
+                // Fallback to gradient + icon if no photos
+                return Container(
+                  height: 54,
+                  width: 54,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0EA5E9), Color(0xFF6366F1)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.local_parking_rounded,
+                    color: Colors.white,
+                  ),
+                );
+              }(),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -421,6 +538,152 @@ class _SpaceListTilePremium extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF4F46E5),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AmenityFilterSection extends StatelessWidget {
+  final bool evCharging;
+  final bool cctv;
+  final bool lighting;
+  final bool covered;
+  final ValueChanged<bool> onEVChargingChanged;
+  final ValueChanged<bool> onCCTVChanged;
+  final ValueChanged<bool> onLightingChanged;
+  final ValueChanged<bool> onCoveredChanged;
+
+  const _AmenityFilterSection({
+    required this.evCharging,
+    required this.cctv,
+    required this.lighting,
+    required this.covered,
+    required this.onEVChargingChanged,
+    required this.onCCTVChanged,
+    required this.onLightingChanged,
+    required this.onCoveredChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.filter_list_rounded,
+                color: Color(0xFF334155),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Filter by Amenities',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _FilterChip(
+                label: 'EV Charging',
+                icon: Icons.ev_station_rounded,
+                selected: evCharging,
+                onTap: () => onEVChargingChanged(!evCharging),
+              ),
+              _FilterChip(
+                label: 'CCTV',
+                icon: Icons.videocam_rounded,
+                selected: cctv,
+                onTap: () => onCCTVChanged(!cctv),
+              ),
+              _FilterChip(
+                label: 'Lighting',
+                icon: Icons.lightbulb_rounded,
+                selected: lighting,
+                onTap: () => onLightingChanged(!lighting),
+              ),
+              _FilterChip(
+                label: 'Covered',
+                icon: Icons.roofing_rounded,
+                selected: covered,
+                onTap: () => onCoveredChanged(!covered),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF4F46E5) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? const Color(0xFF4F46E5) : const Color(0xFFE2E8F0),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.white : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+                color: selected ? Colors.white : const Color(0xFF334155),
               ),
             ),
           ],

@@ -2,15 +2,14 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../services/messaging_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'my_profile_screen.dart';
-import 'saved_events_screen.dart';
-import 'saved_restaurants_screen.dart';
 import 'search_screen.dart'; // Advanced multi-collection search
 import 'settings_screen.dart';
+import 'help_and_support_screen.dart';
+import 'favorites_screen.dart';
 
 import 'my_bookings_screen.dart';
 import 'private_parking_messages_screen.dart';
@@ -610,24 +609,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         );
       case 1:
-        return const EventsListScreen();
+        return const FavoritesScreen();
       case 2:
         return hub.ParkingHubScreen(userData: userData);
       case 3:
-        return const AdvancedDiningScreen();
+        return const MyBookingsScreen();
       case 4:
-        return const AccommodationScreen();
+        return const HelpAndSupportScreen();
       default:
         return const SizedBox.shrink();
     }
   }
 
   Widget _buildProfileEndDrawer(Map<String, dynamic> userData) {
-    final name = (userData['name'] as String?)?.trim();
+    final name = ((userData['displayName'] ?? userData['name']) as String?)
+        ?.trim();
+    final firstName = (name == null || name.isEmpty)
+        ? 'Guest'
+        : name.split(' ').first;
     final email = (userData['email'] as String?)?.trim();
     final photoUrl = (userData['photoUrl'] as String?)?.trim();
-
-    final safeName = (name == null || name.isEmpty) ? 'Guest' : name;
     final safeEmail = email ?? '';
 
     return Drawer(
@@ -637,8 +638,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: SafeArea(
         child: Column(
           children: [
+            // Header
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -657,13 +659,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          safeName,
+                          firstName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
-                            fontSize: 16,
+                            fontSize: 18,
                             letterSpacing: -0.3,
                           ),
                         ),
@@ -678,8 +680,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             fontSize: 12,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        const Wrap(spacing: 8, runSpacing: 8),
                       ],
                     ),
                   ),
@@ -691,169 +691,168 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: SafeNetworkAvatar(
-                      radius: 24,
+                      radius: 26,
                       photoUrl: photoUrl,
-                      name: safeName,
+                      name: firstName,
                     ),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-                children: [
-                  _DrawerTile(
-                    icon: Icons.person_rounded,
-                    title: 'My Profile',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const MyProfileScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.receipt_long_rounded,
-                    title: 'My Bookings',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const MyBookingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.mark_unread_chat_alt_rounded,
-                    title: 'Message Requests',
-                    trailing: StreamBuilder<int>(
-                      stream: _pendingChatRequestsCountStream(
-                        FirebaseAuth.instance.currentUser!.uid,
-                      ),
-                      builder: (context, snap) {
-                        final count = snap.data ?? 0;
-                        if (count <= 0) return const SizedBox.shrink();
 
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+            // Quick access grid
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _QuickAccessTile(
+                            icon: Icons.person_rounded,
+                            title: 'My Profile',
+                            subtitle: 'View & edit',
+                            gradientColors: const [
+                              Color(0xFF0EA5E9),
+                              Color(0xFF6366F1),
+                            ],
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const MyProfileScreen(),
+                                ),
+                              );
+                            },
                           ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEF4444),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            count > 99 ? '99+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _QuickAccessTile(
+                            icon: Icons.mark_unread_chat_alt_rounded,
+                            title: 'Messages',
+                            subtitle: 'Requests',
+                            gradientColors: const [
+                              Color(0xFFFB923C),
+                              Color(0xFFF43F5E),
+                            ],
+                            decorationAngle: 0.35,
+                            trailing: StreamBuilder<int>(
+                              stream: _pendingChatRequestsCountStream(
+                                FirebaseAuth.instance.currentUser!.uid,
+                              ),
+                              builder: (context, snap) {
+                                final count = snap.data ?? 0;
+                                if (count <= 0) return const SizedBox.shrink();
+
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(999),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.15),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    count > 99 ? '99+' : '$count',
+                                    style: const TextStyle(
+                                      color: Color(0xFFF43F5E),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const PrivateParkingMessagesScreen(),
+                                ),
+                              );
+                            },
                           ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PrivateParkingMessagesScreen(),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _QuickAccessTile(
+                            icon: Icons.location_city_rounded,
+                            title: 'Wembley\nCommunities',
+                            subtitle: 'Explore zones',
+                            gradientColors: const [
+                              Color(0xFF10B981),
+                              Color(0xFF06B6D4),
+                            ],
+                            decorationAngle: -0.25,
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const WembleyCommunitiesScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.location_city_rounded,
-                    title: 'Wembley Communities',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const WembleyCommunitiesScreen(),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: _QuickAccessTile(
+                            icon: Icons.settings_rounded,
+                            title: 'Settings',
+                            subtitle: 'Preferences',
+                            gradientColors: const [
+                              Color(0xFF8B5CF6),
+                              Color(0xFFA855F7),
+                            ],
+                            centered: true,
+                            decorationAngle: 0.2,
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SettingsScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.bookmark_rounded,
-                    title: 'Saved Events',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SavedEventsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.favorite_rounded,
-                    title: 'Saved Restaurants',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SavedRestaurantsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  const _DrawerDividerLabel(label: 'Support'),
-                  _DrawerTile(
-                    icon: Icons.settings_rounded,
-                    title: 'Settings',
-                    onTap: () {
-                      Navigator.pop(context); // Close drawer
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _DrawerTile(
-                    icon: Icons.help_outline_rounded,
-                    title: 'Help & Support',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(16),
+                      ],
                     ),
-                    child: ListTile(
-                      leading: const Icon(
-                        Icons.logout_rounded,
-                        color: Color(0xFFEF4444),
-                      ),
-                      title: const Text(
-                        'Logout',
-                        style: TextStyle(
-                          color: Color(0xFFEF4444),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        await _logout();
-                      },
-                    ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Logout pinned to the bottom
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _LogoutTile(
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _logout();
+                },
               ),
             ),
           ],
@@ -1081,10 +1080,25 @@ class ExploreTabPremium extends StatelessWidget {
                 delegate: SliverChildListDelegate([
                   const SizedBox(height: 12), // ✅ Keep as 12 (was already good)
                   _PremiumActionGrid(
-                    onEvents: () => onGoToTab(1),
+                    onEvents: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EventsListScreen(),
+                      ),
+                    ),
                     onParking: () => onGoToTab(2),
-                    onDining: () => onGoToTab(3),
-                    onStay: () => onGoToTab(4),
+                    onDining: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AdvancedDiningScreen(),
+                      ),
+                    ),
+                    onStay: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AccommodationScreen(),
+                      ),
+                    ),
                     onOffers: onOpenOffers,
                     onAi: onOpenAi,
                   ),
@@ -1093,7 +1107,12 @@ class ExploreTabPremium extends StatelessWidget {
                     title: 'Upcoming in next 3 days',
                     subtitle: 'Wembley • Updated today • Verified sources',
                     actionText: 'See all',
-                    onAction: () => onGoToTab(1),
+                    onAction: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EventsListScreen(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -1108,7 +1127,14 @@ class ExploreTabPremium extends StatelessWidget {
 
                         final docs = snapshot.data?.docs ?? [];
                         if (docs.isEmpty) {
-                          return _EmptyUpcomingCard(onTap: () => onGoToTab(1));
+                          return _EmptyUpcomingCard(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EventsListScreen(),
+                              ),
+                            ),
+                          );
                         }
 
                         return ListView.separated(
@@ -1117,7 +1143,14 @@ class ExploreTabPremium extends StatelessWidget {
                           separatorBuilder: (_, _) => const SizedBox(width: 14),
                           itemBuilder: (context, i) {
                             if (i == docs.length) {
-                              return _SeeAllCard(onTap: () => onGoToTab(1));
+                              return _SeeAllCard(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const EventsListScreen(),
+                                  ),
+                                ),
+                              );
                             }
                             final e = docs[i].data();
                             final title =
@@ -2079,62 +2112,193 @@ class _LargeActionCard extends StatelessWidget {
   }
 }
 
-class _DrawerTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  final Widget? trailing;
-
-  const _DrawerTile({
+/// A single quick-access card used in the profile end drawer.
+///
+/// Each instance gets its own gradient and an oversized, faded background
+/// icon for visual identity. [centered] switches the content layout from
+/// the default top-icon/bottom-text arrangement to a fully centered one,
+/// which is used for the Settings tile to give it a distinct look.
+class _QuickAccessTile extends StatelessWidget {
+  const _QuickAccessTile({
     required this.icon,
     required this.title,
+    required this.subtitle,
+    required this.gradientColors,
     required this.onTap,
     this.trailing,
+    this.centered = false,
+    this.decorationAngle = -0.35,
   });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Color> gradientColors;
+  final VoidCallback onTap;
+  final Widget? trailing;
+  final bool centered;
+  final double decorationAngle;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, color: _HomeUi.text),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: _HomeUi.text,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          height: 132,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: LinearGradient(
+              colors: gradientColors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: gradientColors.last.withOpacity(0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                right: -16,
+                bottom: -16,
+                child: Transform.rotate(
+                  angle: decorationAngle,
+                  child: Icon(
+                    icon,
+                    size: 90,
+                    color: Colors.white.withOpacity(0.14),
+                  ),
                 ),
               ),
-            ),
-            if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
-            const Icon(Icons.chevron_right_rounded, color: _HomeUi.textMuted),
-          ],
+              if (trailing != null)
+                Positioned(top: 0, right: 0, child: trailing!),
+              centered ? _buildCentered() : _buildDefault(),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _iconBadge() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.22),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(icon, color: Colors.white, size: 22),
+    );
+  }
+
+  Widget _buildDefault() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _iconBadge(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+                height: 1.15,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.85),
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCentered() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _iconBadge(),
+        const SizedBox(height: 10),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.85),
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _DrawerDividerLabel extends StatelessWidget {
-  final String label;
-  const _DrawerDividerLabel({required this.label});
+/// Standalone logout action, visually separated from the quick-access grid
+/// and anchored to the bottom of the drawer.
+class _LogoutTile extends StatelessWidget {
+  const _LogoutTile({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
-      child: Text(
-        label.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: _HomeUi.textMuted,
-          letterSpacing: 0.6,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Logout',
+                style: TextStyle(
+                  color: Color(0xFFEF4444),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

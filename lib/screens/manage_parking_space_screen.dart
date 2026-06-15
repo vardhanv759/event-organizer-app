@@ -37,104 +37,6 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
     super.dispose();
   }
 
-  // ========== TOGGLE AVAILABILITY ==========
-  Future<void> _toggleAvailability(bool currentValue) async {
-    final newValue = !currentValue;
-    await FirebaseFirestore.instance
-        .collection('parking_spaces')
-        .doc(widget.spaceId)
-        .update({
-          'isActive': newValue,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-    _showSnackBar(newValue ? 'Space activated' : 'Space paused');
-  }
-
-  // ========== SHARE SPACE ==========
-  void _shareSpace(String title, String postcode) {
-    Share.share(
-      'Check out my parking space: $title in $postcode\nBook now on our app!',
-      subject: 'Parking Space: $title',
-    );
-  }
-
-  // ========== SHOW QR CODE ==========
-  void _showQRCode() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Space QR Code',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            QrImageView(
-              data: 'parking_space:${widget.spaceId}',
-              version: QrVersions.auto,
-              size: 200.0,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Scan to view this space',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ========== DUPLICATE SPACE ==========
-  Future<void> _duplicateSpace(Map<String, dynamic> data) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Duplicate Space?',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        content: const Text(
-          'This will create a copy of this space. You can edit it after creation.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4F46E5),
-            ),
-            child: const Text('Duplicate'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      final newSpace = Map<String, dynamic>.from(data);
-      newSpace.remove('id');
-      newSpace['createdAt'] = FieldValue.serverTimestamp();
-      newSpace['status'] = 'pending';
-      newSpace['title'] = '${data['title']} (Copy)';
-      await FirebaseFirestore.instance
-          .collection('parking_spaces')
-          .add(newSpace);
-      _showSnackBar('Space duplicated successfully');
-    }
-  }
-
   // ========== EDIT SPACE DETAILS ==========
   Future<void> _editSpaceDetails(Map<String, dynamic> data) async {
     String spaceType =
@@ -248,7 +150,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
+                backgroundColor: const Color.fromARGB(255, 252, 252, 254),
               ),
               child: const Text('Save'),
             ),
@@ -323,7 +225,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
+                backgroundColor: const Color.fromARGB(255, 247, 247, 249),
               ),
               child: const Text('Save'),
             ),
@@ -394,7 +296,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4F46E5),
+              backgroundColor: const Color.fromARGB(255, 242, 242, 243),
             ),
             child: const Text('Save'),
           ),
@@ -588,8 +490,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      _buildQuickActions(isActive, title, postcode, data),
-                      const SizedBox(height: 20),
+                      // Analytics Dashboard
                       _buildAnalytics(
                         totalViews,
                         totalBookings,
@@ -597,9 +498,22 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                         rating,
                       ),
                       const SizedBox(height: 24),
+                      // Tabs
                       _buildTabs(),
                       const SizedBox(height: 20),
-                      _buildTabContent(
+                    ],
+                  ),
+                ),
+              ),
+              // Tab Content in Sliver
+              SliverFillRemaining(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Details Tab
+                      _buildDetailsTab(
                         data,
                         title,
                         postcode,
@@ -609,7 +523,6 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                         size,
                         hourlyRate.toDouble(),
                         availability,
-                        photoUrls,
                         hasCCTV,
                         hasLighting,
                         isCovered,
@@ -617,6 +530,10 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                         accessInstructions,
                         vehicleRestrictions,
                       ),
+                      // Photos Tab
+                      _buildPhotosTab(photoUrls),
+                      // Settings Tab
+                      _buildSettingsTab(),
                     ],
                   ),
                 ),
@@ -794,73 +711,6 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
     );
   }
 
-  Widget _buildQuickActions(
-    bool isActive,
-    String title,
-    String postcode,
-    Map<String, dynamic> data,
-  ) {
-    return _GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickActionButton(
-                  icon: isActive ? Icons.pause : Icons.play_arrow,
-                  label: isActive ? 'Pause' : 'Activate',
-                  color: isActive ? Colors.orange : const Color(0xFF10B981),
-                  onTap: () => _toggleAvailability(isActive),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _QuickActionButton(
-                  icon: Icons.share_rounded,
-                  label: 'Share',
-                  color: const Color(0xFF6366F1),
-                  onTap: () => _shareSpace(title, postcode),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickActionButton(
-                  icon: Icons.qr_code,
-                  label: 'QR Code',
-                  color: const Color(0xFF8B5CF6),
-                  onTap: _showQRCode,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _QuickActionButton(
-                  icon: Icons.copy_rounded,
-                  label: 'Duplicate',
-                  color: const Color(0xFF0EA5E9),
-                  onTap: () => _duplicateSpace(data),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAnalytics(
     int views,
     int bookings,
@@ -922,13 +772,11 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
       ),
       child: TabBar(
         controller: _tabController,
-        labelColor: Colors.white,
+        labelColor: const Color.fromARGB(255, 166, 9, 239),
         unselectedLabelColor: const Color(0xFF64748B),
-        indicator: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-          ),
-          borderRadius: BorderRadius.circular(12),
+        indicator: const UnderlineTabIndicator(
+          borderSide: BorderSide(color: Color(0xFF4F46E5), width: 4),
+          insets: EdgeInsets.symmetric(horizontal: 32),
         ),
         indicatorPadding: const EdgeInsets.all(6),
         labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
@@ -941,7 +789,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
     );
   }
 
-  Widget _buildTabContent(
+  Widget _buildDetailsTab(
     Map<String, dynamic> data,
     String title,
     String postcode,
@@ -951,7 +799,6 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
     String size,
     double hourlyRate,
     String availability,
-    List photoUrls,
     bool hasCCTV,
     bool hasLighting,
     bool isCovered,
@@ -959,42 +806,33 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
     String accessInstructions,
     String vehicleRestrictions,
   ) {
-    return SizedBox(
-      height: 600,
-      child: TabBarView(
-        controller: _tabController,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
         children: [
-          SingleChildScrollView(
-            child: Column(
-              children: [
-                _buildLocationSection(title, postcode, area, exactAddress),
-                const SizedBox(height: 16),
-                _buildSpaceDetailsSection(
-                  data,
-                  spaceType,
-                  size,
-                  hourlyRate,
-                  availability,
-                ),
-                const SizedBox(height: 16),
-                _buildAmenitiesSection(
-                  data,
-                  hasCCTV,
-                  hasLighting,
-                  isCovered,
-                  hasEVCharging,
-                ),
-                const SizedBox(height: 16),
-                _buildAdditionalInfoSection(
-                  data,
-                  accessInstructions,
-                  vehicleRestrictions,
-                ),
-              ],
-            ),
+          _buildLocationSection(title, postcode, area, exactAddress),
+          const SizedBox(height: 16),
+          _buildSpaceDetailsSection(
+            data,
+            spaceType,
+            size,
+            hourlyRate,
+            availability,
           ),
-          _buildPhotosTab(photoUrls),
-          _buildSettingsTab(),
+          const SizedBox(height: 16),
+          _buildAmenitiesSection(
+            data,
+            hasCCTV,
+            hasLighting,
+            isCovered,
+            hasEVCharging,
+          ),
+          const SizedBox(height: 16),
+          _buildAdditionalInfoSection(
+            data,
+            accessInstructions,
+            vehicleRestrictions,
+          ),
         ],
       ),
     );
@@ -1186,6 +1024,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
 
   Widget _buildPhotosTab(List photoUrls) {
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 20),
       child: _GlassCard(
         child: Column(
           children: [
@@ -1202,7 +1041,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                 ElevatedButton.icon(
                   onPressed: _uploading ? null : _addPhoto,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4F46E5),
+                    backgroundColor: const Color.fromARGB(255, 248, 248, 250),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1232,7 +1071,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
                     Icon(
                       Icons.add_photo_alternate_outlined,
                       size: 64,
-                      color: Colors.grey,
+                      color: Color.fromARGB(255, 158, 158, 158),
                     ),
                     SizedBox(height: 16),
                     Text(
@@ -1303,6 +1142,7 @@ class _ManageParkingSpaceScreenState extends State<ManageParkingSpaceScreen>
 
   Widget _buildSettingsTab() {
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 20),
       child: _GlassCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1516,46 +1356,6 @@ class _InfoRow extends StatelessWidget {
         ),
       ),
     ],
-  );
-}
-
-class _QuickActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _QuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(12),
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    ),
   );
 }
 

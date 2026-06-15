@@ -37,6 +37,9 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
   List<Map<String, dynamic>> _userEvents = [];
   bool _loadingEvents = false;
 
+  // Track saved accommodations
+  Set<String> _savedAccommodationIds = {};
+
   final List<_RatingFilter> _ratingFilters = const [
     _RatingFilter(label: 'All ratings', min: null),
     _RatingFilter(label: 'Top rated (4.5+)', min: 4.5),
@@ -52,6 +55,7 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initLocation();
       _loadUserEvents();
+      _loadSavedAccommodations();
 
       if (widget.autoShowHotelId != null && widget.autoShowHotelData != null) {
         _autoOpenHotel();
@@ -119,6 +123,150 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
     } catch (e) {
       debugPrint('Error loading user events: $e');
       setState(() => _loadingEvents = false);
+    }
+  }
+
+  // ========== LOAD SAVED ACCOMMODATIONS ==========
+  Future<void> _loadSavedAccommodations() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedAccommodation')
+          .get();
+
+      if (!mounted) return;
+      setState(() {
+        _savedAccommodationIds = snapshot.docs.map((doc) => doc.id).toSet();
+      });
+    } catch (e) {
+      debugPrint('Error loading saved accommodations: $e');
+    }
+  }
+
+  // ========== CHECK IF ACCOMMODATION IS SAVED ==========
+  bool _isSaved(Map<String, dynamic> data) {
+    final placeId = data['place_id'] as String?;
+    return placeId != null && _savedAccommodationIds.contains(placeId);
+  }
+
+  // ========== SAVE/UNSAVE ACCOMMODATION ==========
+  Future<void> _toggleSaveAccommodation(Map<String, dynamic> data) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to save accommodations'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
+    final placeId = data['place_id'] as String?;
+    if (placeId == null) return;
+
+    final isSaved = _isSaved(data);
+
+    try {
+      if (isSaved) {
+        // Remove from saved
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('savedAccommodation')
+            .doc(placeId)
+            .delete();
+
+        setState(() {
+          _savedAccommodationIds.remove(placeId);
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('Removed from favorites'),
+                ],
+              ),
+              backgroundColor: const Color(0xFF64748B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      } else {
+        // Save accommodation
+        final name = data['name'] as String? ?? 'Hotel';
+        final imageUrl = _bestImageUrl(data);
+        final rating = _toDouble(data['rating']);
+
+        // Safely handle types field - could be List or String
+        List<String> typesList = [];
+        final typesData = data['types'];
+        if (typesData is List) {
+          typesList = typesData.map((e) => e.toString()).toList();
+        } else if (typesData is String) {
+          typesList = [typesData];
+        }
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('savedAccommodation')
+            .doc(placeId)
+            .set({
+              'name': name,
+              'location': 'Wembley',
+              'imageUrl': imageUrl ?? '',
+              'rating': rating,
+              'pricePerNight': 0, // You can add price if available in your data
+              'types': typesList,
+              'bookingUrl': data['website'] ?? '',
+              'savedAt': FieldValue.serverTimestamp(),
+              'place_id': placeId,
+            });
+
+        setState(() {
+          _savedAccommodationIds.add(placeId);
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.favorite, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('Added to favorites'),
+                ],
+              ),
+              backgroundColor: const Color(0xFFEF4444),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
     }
   }
 
@@ -654,38 +802,71 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Image with memory-efficient loading and error handling
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: AspectRatio(
-              aspectRatio: 1.5, // User's working value
-              child: imageUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      maxHeightDiskCache: 400,
-                      maxWidthDiskCache: 400,
-                      memCacheHeight: 200,
-                      memCacheWidth: 200,
-                      fadeInDuration: const Duration(milliseconds: 200),
-                      placeholder: (_, __) => Container(
-                        color: Colors.grey.shade100,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.grey.shade400,
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+                child: AspectRatio(
+                  aspectRatio: 1.5, // User's working value
+                  child: imageUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                          maxHeightDiskCache: 400,
+                          maxWidthDiskCache: 400,
+                          memCacheHeight: 200,
+                          memCacheWidth: 200,
+                          fadeInDuration: const Duration(milliseconds: 200),
+                          placeholder: (_, __) => Container(
+                            color: Colors.grey.shade100,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.grey.shade400,
+                                ),
+                              ),
                             ),
                           ),
+                          errorWidget: (context, url, error) {
+                            // Clear this specific image from cache on error
+                            CachedNetworkImage.evictFromCache(url);
+                            return _ImageFallback(title: name);
+                          },
+                        )
+                      : _ImageFallback(title: name),
+                ),
+              ),
+              // Favorite Button
+              Positioned(
+                top: 8,
+                right: 8,
+                child: GestureDetector(
+                  onTap: () => _toggleSaveAccommodation(data),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
-                      errorWidget: (context, url, error) {
-                        // Clear this specific image from cache on error
-                        CachedNetworkImage.evictFromCache(url);
-                        return _ImageFallback(title: name);
-                      },
-                    )
-                  : _ImageFallback(title: name),
-            ),
+                      ],
+                    ),
+                    child: Icon(
+                      _isSaved(data) ? Icons.favorite : Icons.favorite_border,
+                      color: const Color(0xFFEF4444),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
 
           // Content with fixed height for alignment
@@ -975,6 +1156,14 @@ class _AccommodationScreenState extends State<AccommodationScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  onPressed: () => _toggleSaveAccommodation(data),
+                  icon: Icon(
+                    _isSaved(data) ? Icons.favorite : Icons.favorite_border,
+                  ),
+                  color: const Color(0xFFEF4444),
+                  iconSize: 22,
+                ),
                 IconButton(
                   onPressed: () => _showHotelInfo(data),
                   icon: const Icon(Icons.info_outline_rounded),

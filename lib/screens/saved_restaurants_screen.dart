@@ -6,7 +6,9 @@ import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SavedRestaurantsScreen extends StatefulWidget {
-  const SavedRestaurantsScreen({super.key});
+  final bool embedded;
+
+  const SavedRestaurantsScreen({super.key, this.embedded = false});
 
   @override
   State<SavedRestaurantsScreen> createState() => _SavedRestaurantsScreenState();
@@ -96,7 +98,9 @@ class _SavedRestaurantsScreenState extends State<SavedRestaurantsScreen> {
 
     if (uid == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Saved Restaurants')),
+        appBar: widget.embedded
+            ? null
+            : AppBar(title: const Text('Saved Restaurants')),
         body: const Center(
           child: Text('Please log in to view saved restaurants'),
         ),
@@ -105,22 +109,27 @@ class _SavedRestaurantsScreenState extends State<SavedRestaurantsScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FF),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF8F9FF),
-        elevation: 0,
-        title: const Text(
-          'Saved Restaurants',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.2,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0F172A)),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              backgroundColor: const Color(0xFFF8F9FF),
+              elevation: 0,
+              title: const Text(
+                'Saved Restaurants',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
+                ),
+              ),
+              leading: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: Color(0xFF0F172A),
+                ),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _db
             .collection('users')
