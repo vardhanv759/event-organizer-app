@@ -1,11 +1,20 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/material.dart';
 
-/// 🎨 Premium My Bookings Screen
-/// Shows all user's parking bookings with beautiful UI
+import '../services/booking_service.dart';
+import '../services/messaging_service.dart';
+import '../services/review_service.dart';
+import '../utils/time_format.dart';
+import '../utils/chat_avatar.dart';
+import 'private_parking_chat_screen.dart';
+
+/// My Bookings - the renter's view of every booking they've made,
+/// driven entirely by the `bookings` collection (see BookingService for
+/// the full lifecycle). This used to read the old Stripe-era
+/// `parking_bookings` collection, which nothing writes to anymore now
+/// that booking happens through Request-to-Book + accept instead of
+/// payment.
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
 
@@ -20,6 +29,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   @override
   void initState() {
     super.initState();
+    // NOTE: this used to be length: 2 while the TabBarView below had 3
+    // children ('upcoming', 'past', 'all') - a mismatch that throws a
+    // Flutter assertion at runtime. Fixed to 2, matching the 2 tabs and
+    // 2 views actually present.
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -64,7 +77,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // Premium App Bar
           SliverAppBar(
             expandedHeight: 214,
             floating: false,
@@ -85,7 +97,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                 ),
                 child: Stack(
                   children: [
-                    // Background patterns
                     Positioned(
                       right: -50,
                       top: -50,
@@ -110,7 +121,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                         ),
                       ),
                     ),
-                    // Content
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 80, 20, 20),
                       child: Column(
@@ -158,8 +168,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
               ),
             ),
           ),
-
-          // Tab Bar
           SliverPersistentHeader(
             pinned: true,
             delegate: _StickyTabBarDelegate(
@@ -184,15 +192,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
               ),
             ),
           ),
-
-          // Content
           SliverFillRemaining(
             child: TabBarView(
               controller: _tabController,
               children: [
                 _BookingsListView(userId: user.uid, filter: 'upcoming'),
                 _BookingsListView(userId: user.uid, filter: 'past'),
-                _BookingsListView(userId: user.uid, filter: 'all'),
               ],
             ),
           ),
@@ -202,15 +207,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
   }
 }
 
-/// Sticky Tab Bar Delegate
 class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar tabBar;
-
   _StickyTabBarDelegate(this.tabBar);
 
   @override
   double get minExtent => tabBar.preferredSize.height;
-
   @override
   double get maxExtent => tabBar.preferredSize.height;
 
@@ -224,12 +226,13 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
-    return false;
-  }
+  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) => false;
 }
 
-/// Bookings List View
+/// 'upcoming' = booking's start time is still ahead, regardless of
+/// status, so a cancelled-but-still-future booking is still visible
+/// here (with a Cancelled badge) rather than silently disappearing.
+/// 'past' = start time has already passed.
 class _BookingsListView extends StatelessWidget {
   final String userId;
   final String filter;
@@ -238,13 +241,8 @@ class _BookingsListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-        .collection('parking_bookings')
-        .where('userId', isEqualTo: userId)
-        .orderBy('startAt', descending: true);
-
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: query.snapshots(),
+      stream: BookingService.myBookingsAsRenter(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -278,43 +276,36 @@ class _BookingsListView extends StatelessWidget {
           );
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyState();
-        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _buildEmptyState();
 
-        // Filter bookings
         final now = DateTime.now();
-        final allBookings = snapshot.data!.docs;
+        final filtered = docs.where((doc) {
+          final data = doc.data();
+          final start = (data['start'] as Timestamp?)?.toDate();
+          final status = (data['status'] as String?) ?? 'confirmed';
+          if (start == null) return false;
+          // Cancelled bookings always appear in Past regardless of their
+          // scheduled start time. A booking cancelled before it started
+          // is still a past event from the renter's perspective — showing
+          // it in Upcoming would be confusing since the slot is gone.
+          if (status == 'cancelled') return filter == 'past';
+          return filter == 'upcoming'
+              ? start.isAfter(now)
+              : !start.isAfter(now);
+        }).toList();
 
-        List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredBookings;
-
-        if (filter == 'upcoming') {
-          filteredBookings = allBookings.where((doc) {
-            final data = doc.data();
-            final startAt = (data['startAt'] as Timestamp?)?.toDate();
-            return startAt != null && startAt.isAfter(now);
-          }).toList();
-        } else if (filter == 'past') {
-          filteredBookings = allBookings.where((doc) {
-            final data = doc.data();
-            final startAt = (data['startAt'] as Timestamp?)?.toDate();
-            return startAt != null && startAt.isBefore(now);
-          }).toList();
-        } else {
-          filteredBookings = allBookings;
-        }
-
-        if (filteredBookings.isEmpty) {
-          return _buildEmptyState();
-        }
+        if (filtered.isEmpty) return _buildEmptyState();
 
         return ListView.builder(
           padding: const EdgeInsets.all(20),
-          itemCount: filteredBookings.length,
+          itemCount: filtered.length,
           itemBuilder: (context, index) {
-            final booking = filteredBookings[index].data();
-            final bookingId = filteredBookings[index].id;
-            return _BookingCard(booking: booking, bookingId: bookingId);
+            return _BookingCard(
+              booking: filtered[index].data(),
+              bookingId: filtered[index].id,
+              myUid: userId,
+            );
           },
         );
       },
@@ -322,23 +313,7 @@ class _BookingsListView extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    String message;
-    IconData icon;
-
-    switch (filter) {
-      case 'upcoming':
-        message = 'No upcoming bookings';
-        icon = Icons.event_busy_rounded;
-        break;
-      case 'past':
-        message = 'No past bookings';
-        icon = Icons.history_rounded;
-        break;
-      default:
-        message = 'No bookings yet';
-        icon = Icons.inbox_rounded;
-    }
-
+    final isUpcoming = filter == 'upcoming';
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -350,11 +325,15 @@ class _BookingsListView extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
             ),
-            child: Icon(icon, size: 64, color: const Color(0xFF94A3B8)),
+            child: Icon(
+              isUpcoming ? Icons.event_busy_rounded : Icons.history_rounded,
+              size: 64,
+              color: const Color(0xFF94A3B8),
+            ),
           ),
           const SizedBox(height: 20),
           Text(
-            message,
+            isUpcoming ? 'No upcoming bookings' : 'No past bookings',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -363,8 +342,8 @@ class _BookingsListView extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            filter == 'upcoming'
-                ? 'Book a parking space to get started'
+            isUpcoming
+                ? 'Request to book a parking space to get started'
                 : 'Your booking history will appear here',
             style: TextStyle(
               fontSize: 14,
@@ -378,50 +357,184 @@ class _BookingsListView extends StatelessWidget {
   }
 }
 
-/// Premium Booking Card
-class _BookingCard extends StatelessWidget {
+class _StatusInfo {
+  final Color color;
+  final IconData icon;
+  final String label;
+  const _StatusInfo(this.color, this.icon, this.label);
+}
+
+_StatusInfo _statusInfoFor(String status) {
+  switch (status) {
+    case 'confirmed':
+      return const _StatusInfo(
+        Color(0xFF10B981),
+        Icons.check_circle_rounded,
+        'Confirmed',
+      );
+    case 'cancellation_requested':
+      return const _StatusInfo(
+        Color(0xFFF59E0B),
+        Icons.schedule_rounded,
+        'Cancellation requested',
+      );
+    case 'cancelled':
+      return const _StatusInfo(
+        Color(0xFF94A3B8),
+        Icons.cancel_rounded,
+        'Cancelled',
+      );
+    case 'completed':
+      return const _StatusInfo(
+        Color(0xFF6366F1),
+        Icons.task_alt_rounded,
+        'Completed',
+      );
+    case 'no_show':
+      return const _StatusInfo(
+        Color(0xFFEF4444),
+        Icons.report_problem_rounded,
+        'No-show recorded',
+      );
+    case 'completed_unconfirmed':
+      return const _StatusInfo(
+        Color(0xFF8B5CF6),
+        Icons.check_circle_outline_rounded,
+        'Completed',
+      );
+    default:
+      return _StatusInfo(
+        Colors.grey.shade500,
+        Icons.help_outline_rounded,
+        status,
+      );
+  }
+}
+
+class _BookingCard extends StatefulWidget {
   final Map<String, dynamic> booking;
   final String bookingId;
+  final String myUid;
 
-  const _BookingCard({required this.booking, required this.bookingId});
+  const _BookingCard({
+    required this.booking,
+    required this.bookingId,
+    required this.myUid,
+  });
+
+  @override
+  State<_BookingCard> createState() => _BookingCardState();
+}
+
+class _BookingCardState extends State<_BookingCard> {
+  bool _busy = false;
+
+  Future<void> _cancel() async {
+    final start = (widget.booking['start'] as Timestamp?)?.toDate();
+    if (start == null) return;
+
+    final isLate = BookingService.isLate(start);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(isLate ? 'Request cancellation?' : 'Cancel booking?'),
+        content: Text(
+          isLate
+              ? 'This booking starts within 24 hours, so cancelling now '
+                    'needs the host\'s approval. They\'ll be notified right '
+                    'away.'
+              : 'This will free up the slot for someone else. This can\'t '
+                    'be undone.',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Never mind'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+            ),
+            child: Text(isLate ? 'Request cancellation' : 'Cancel booking'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final result = await BookingService.requestOrCancelBooking(
+        widget.bookingId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result == 'requested'
+                ? 'Cancellation request sent to the host'
+                : 'Booking cancelled',
+          ),
+          backgroundColor: const Color(0xFF111827),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Couldn\'t cancel: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _messageHost(String providerUid) async {
+    final chatId = MessagingService.chatIdForUids(widget.myUid, providerUid);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            PrivateParkingChatScreen(chatId: chatId, otherUid: providerUid),
+      ),
+    );
+  }
+
+  Future<void> _rateHost(String providerUid) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _RateBookingSheet(
+        revieweeUid: providerUid,
+        bookingId: widget.bookingId,
+        type: ReviewType.host,
+        title: 'Rate this host',
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final status = (booking['status'] ?? '').toString();
-    final paymentStatus = (booking['paymentStatus'] ?? '').toString();
-    final startAt = (booking['startAt'] as Timestamp?)?.toDate();
-    final hours = (booking['hours'] ?? 0) as int;
-    final vehicleReg = (booking['vehicleReg'] ?? 'N/A').toString();
-    final totalAmount = (booking['totalAmountSnapshot'] ?? 0).toDouble();
-    final spaceId = (booking['spaceId'] ?? '').toString();
+    final b = widget.booking;
+    final status = (b['status'] ?? 'confirmed').toString();
+    final start = (b['start'] as Timestamp?)?.toDate();
+    final end = (b['end'] as Timestamp?)?.toDate();
+    final spaceTitle = (b['space_title'] as String?)?.trim();
+    final providerUid = (b['provider_uid'] as String?) ?? '';
+    final note = (b['note'] as String?)?.trim();
+    final cancelledBy = b['cancelled_by'] as String?;
+    final cancelledLate = b['cancelled_late'] as bool?;
 
-    final isConfirmed = status == 'confirmed' && paymentStatus == 'paid';
-    final isPending = status == 'pending_payment';
-    final isExpired = status == 'expired';
-
-    Color statusColor;
-    IconData statusIcon;
-    String statusText;
-
-    if (isConfirmed) {
-      statusColor = const Color(0xFF10B981);
-      statusIcon = Icons.check_circle_rounded;
-      statusText = 'Confirmed';
-    } else if (isPending) {
-      statusColor = const Color(0xFFF59E0B);
-      statusIcon = Icons.pending_rounded;
-      statusText = 'Pending';
-    } else if (isExpired) {
-      statusColor = const Color(0xFFEF4444);
-      statusIcon = Icons.cancel_rounded;
-      statusText = 'Expired';
-    } else {
-      statusColor = const Color(0xFF94A3B8);
-      statusIcon = Icons.help_outline_rounded;
-      statusText = status;
-    }
-
-    final isPast = startAt != null && startAt.isBefore(DateTime.now());
+    final statusInfo = _statusInfoFor(status);
+    final canCancel = status == 'confirmed';
+    final canMessage = status != 'cancelled';
+    final canRate =
+        (status == 'completed' || status == 'completed_unconfirmed');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -440,37 +553,44 @@ class _BookingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         child: Column(
           children: [
-            // Header with gradient
+            // Header
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: isPast
+                  colors: status == 'cancelled'
                       ? [Colors.grey.shade400, Colors.grey.shade500]
                       : [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
                 ),
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(14),
+                  if (providerUid.isNotEmpty)
+                    ChatAvatar(uid: providerUid, size: 48)
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.local_parking_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.local_parking_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Booking #${bookingId.substring(0, 8).toUpperCase()}',
+                          spaceTitle?.isNotEmpty == true
+                              ? spaceTitle!
+                              : 'Parking space',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -484,7 +604,7 @@ class _BookingCard extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.3),
+                            color: Colors.white.withOpacity(0.25),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: Colors.white.withOpacity(0.5),
@@ -493,10 +613,14 @@ class _BookingCard extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(statusIcon, color: Colors.white, size: 14),
+                              Icon(
+                                statusInfo.icon,
+                                color: Colors.white,
+                                size: 14,
+                              ),
                               const SizedBox(width: 4),
                               Text(
-                                statusText,
+                                statusInfo.label,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -509,20 +633,6 @@ class _BookingCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isPast
-                          ? Icons.history_rounded
-                          : Icons.arrow_forward_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -531,78 +641,212 @@ class _BookingCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Date & Time
                   _InfoRow(
                     icon: Icons.calendar_today_rounded,
                     label: 'Date & Time',
-                    value: startAt != null
-                        ? DateFormat('MMM dd, yyyy • HH:mm').format(startAt)
+                    value: start != null
+                        ? '${TimeFormat.date(start)} · ${TimeFormat.clock(start)}'
+                              '${end != null ? ' – ${TimeFormat.clock(end)}' : ''}'
                         : 'N/A',
                     color: const Color(0xFF6366F1),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Duration
-                  _InfoRow(
-                    icon: Icons.schedule_rounded,
-                    label: 'Duration',
-                    value: '$hours ${hours == 1 ? "hour" : "hours"}',
-                    color: const Color(0xFF8B5CF6),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Vehicle
-                  _InfoRow(
-                    icon: Icons.directions_car_rounded,
-                    label: 'Vehicle',
-                    value: vehicleReg.toUpperCase(),
-                    color: const Color(0xFF0EA5E9),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Total
-                  _InfoRow(
-                    icon: Icons.payments_rounded,
-                    label: 'Total Paid',
-                    value: '£${totalAmount.toStringAsFixed(2)}',
-                    color: const Color(0xFF10B981),
-                    isLarge: true,
-                  ),
-
-                  if (spaceId.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // ✅ NEW: Show popup instead of navigating
-                          _showSpaceDetailsPopup(
-                            context,
-                            spaceId: spaceId,
-                            startAt: startAt,
-                            hours: hours,
-                          );
-                        },
-                        icon: const Icon(Icons.location_on_rounded),
-                        label: const Text(
-                          'View Space Details',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                  if (providerUid.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.person_rounded,
+                            color: Color(0xFF8B5CF6),
+                            size: 20,
+                          ),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6366F1),
-                          side: const BorderSide(
-                            color: Color(0xFF6366F1),
-                            width: 2,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Host',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              ChatUserName(
+                                uid: providerUid,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (note?.isNotEmpty == true) ...[
+                    const SizedBox(height: 16),
+                    _InfoRow(
+                      icon: Icons.edit_note_rounded,
+                      label: 'Your note',
+                      value: note!,
+                      color: const Color(0xFF0EA5E9),
+                    ),
+                  ],
+                  if (status == 'cancelled' && cancelledBy != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      cancelledBy == 'renter'
+                          ? (cancelledLate == true
+                                ? 'You requested a late cancellation and the host approved it.'
+                                : 'You cancelled this booking.')
+                          : (cancelledLate == true
+                                ? 'The host cancelled this booking close to the start time.'
+                                : 'The host cancelled this booking.'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                  if (status == 'cancellation_requested') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: const Text(
+                        'Waiting for the host to respond to your '
+                        'cancellation request.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF92400E),
                         ),
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 20),
+
+                  if (_busy)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        if (canMessage && providerUid.isNotEmpty)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _messageHost(providerUid),
+                              icon: const Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 16,
+                              ),
+                              label: const Text('Message'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF6366F1),
+                                side: const BorderSide(
+                                  color: Color(0xFF6366F1),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (canCancel) ...[
+                          if (canMessage) const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _cancel,
+                              icon: const Icon(Icons.close_rounded, size: 16),
+                              label: const Text('Cancel'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFEF4444),
+                                side: const BorderSide(
+                                  color: Color(0xFFEF4444),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (canRate && providerUid.isNotEmpty) ...[
+                          if (canMessage) const SizedBox(width: 10),
+                          Expanded(
+                            child: FutureBuilder<bool>(
+                              future: ReviewService.hasReviewedBooking(
+                                providerUid,
+                                widget.bookingId,
+                              ),
+                              builder: (context, snap) {
+                                final alreadyRated = snap.data == true;
+                                return ElevatedButton.icon(
+                                  onPressed: alreadyRated
+                                      ? null
+                                      : () => _rateHost(providerUid),
+                                  icon: Icon(
+                                    alreadyRated
+                                        ? Icons.star_rounded
+                                        : Icons.star_outline_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    alreadyRated ? 'Rated' : 'Rate host',
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF59E0B),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -611,420 +855,25 @@ class _BookingCard extends StatelessWidget {
       ),
     );
   }
-
-  static void _showSpaceDetailsPopup(
-    BuildContext context, {
-    required String spaceId,
-    required DateTime? startAt,
-    required int hours,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) =>
-          _SpaceDetailsPopup(spaceId: spaceId, startAt: startAt, hours: hours),
-    );
-  }
 }
 
-class _SpaceDetailsPopup extends StatelessWidget {
-  final String spaceId;
-  final DateTime? startAt;
-  final int hours;
-
-  const _SpaceDetailsPopup({
-    required this.spaceId,
-    this.startAt,
-    required this.hours,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('parking_spaces')
-          .doc(spaceId)
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.5,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(color: Color(0xFF6366F1)),
-            ),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data?.data() == null) {
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.5,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-            ),
-            child: const Center(child: Text('Space not found')),
-          );
-        }
-
-        final spaceData = snapshot.data!.data() as Map<String, dynamic>;
-        final address = spaceData['exactAddress'] ?? 'Address not available';
-        final postcode = spaceData['postcode'] ?? '';
-        final spaceType = spaceData['spaceType'] ?? 'Parking Space';
-        final size = spaceData['size'] ?? 'Standard';
-        final lat = spaceData['latitude'] as double?;
-        final lng = spaceData['longitude'] as double?;
-
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.5,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-          ),
-          child: Column(
-            children: [
-              // Drag handle
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 20),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(
-                              Icons.local_parking_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          const Expanded(
-                            child: Text(
-                              'Space Details',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Details Container
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FF),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: const Color(0xFF6366F1).withOpacity(0.2),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            // Time Slot
-                            _DetailRow(
-                              icon: Icons.access_time_rounded,
-                              label: 'Time Slot',
-                              value: startAt != null
-                                  ? DateFormat(
-                                      'MMM dd, yyyy\nHH:mm',
-                                    ).format(startAt!)
-                                  : 'N/A',
-                              color: const Color(0xFF6366F1),
-                            ),
-                            const Divider(height: 24),
-
-                            // Hours Booked
-                            _DetailRow(
-                              icon: Icons.schedule_rounded,
-                              label: 'Hours Booked',
-                              value: '$hours ${hours == 1 ? "hour" : "hours"}',
-                              color: const Color(0xFF8B5CF6),
-                            ),
-                            const Divider(height: 24),
-
-                            // Space Type
-                            _DetailRow(
-                              icon: Icons.category_rounded,
-                              label: 'Space Type',
-                              value: spaceType,
-                              color: const Color(0xFF0EA5E9),
-                            ),
-                            const Divider(height: 24),
-
-                            // Size
-                            _DetailRow(
-                              icon: Icons.straighten_rounded,
-                              label: 'Size',
-                              value: size,
-                              color: const Color(0xFF10B981),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Location Container
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFEEF2FF), Color(0xFFFDF4FF)],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: const Color(0xFF6366F1).withOpacity(0.2),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF6366F1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text(
-                                  'Location',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFF0F172A),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              address,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF475569),
-                                height: 1.5,
-                              ),
-                            ),
-                            if (postcode.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                postcode,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF6366F1),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Bottom Button - ALWAYS SHOWS
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, -5),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _openInGoogleMaps(
-                        lat: lat,
-                        lng: lng,
-                        address: address,
-                        postcode: postcode,
-                      ),
-                      icon: const Icon(Icons.map_rounded, size: 24),
-                      label: const Text(
-                        'Open in Google Maps',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  static Future<void> _openInGoogleMaps({
-    double? lat,
-    double? lng,
-    required String address,
-    required String postcode,
-  }) async {
-    String url;
-
-    // Use coordinates if available, otherwise use address
-    if (lat != null && lng != null) {
-      url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-      print('🗺️ Opening Maps with coordinates: $lat, $lng');
-    } else {
-      // Fallback to address search
-      final searchQuery = postcode.isNotEmpty ? '$address, $postcode' : address;
-      final encodedQuery = Uri.encodeComponent(searchQuery);
-      url = 'https://www.google.com/maps/search/?api=1&query=$encodedQuery';
-      print('🗺️ Opening Maps with address: $searchQuery');
-    }
-
-    try {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        print('❌ Could not open Google Maps');
-      }
-    } catch (e) {
-      print('❌ Error opening Google Maps: $e');
-    }
-  }
-}
-
-// Helper widget for detail rows
-class _DetailRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _DetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color, size: 22),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF94A3B8),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF0F172A),
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Info Row Widget
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
   final Color color;
-  final bool isLarge;
 
   const _InfoRow({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
-    this.isLarge = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           padding: const EdgeInsets.all(10),
@@ -1041,25 +890,195 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF94A3B8),
+                  color: Colors.grey.shade500,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: TextStyle(
-                  fontSize: isLarge ? 18 : 15,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
                 ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Shared 1-5 star + optional comment sheet, used by the renter to rate
+/// the host once a booking is genuinely complete. (The provider's
+/// rating of the renter happens inline as part of confirming attendance
+/// instead - see BookingService.confirmAttendance.)
+class _RateBookingSheet extends StatefulWidget {
+  final String revieweeUid;
+  final String bookingId;
+  final ReviewType type;
+  final String title;
+
+  const _RateBookingSheet({
+    required this.revieweeUid,
+    required this.bookingId,
+    required this.type,
+    required this.title,
+  });
+
+  @override
+  State<_RateBookingSheet> createState() => _RateBookingSheetState();
+}
+
+class _RateBookingSheetState extends State<_RateBookingSheet> {
+  final _commentCtrl = TextEditingController();
+  int _rating = 0;
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _commentCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_rating == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a star rating.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      await ReviewService.submitBookingReview(
+        revieweeUid: widget.revieweeUid,
+        bookingId: widget.bookingId,
+        type: widget.type,
+        rating: _rating,
+        comment: _commentCtrl.text,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thanks for your feedback!'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Couldn\'t submit: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(32),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 50,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          Text(
+            widget.title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (i) {
+                final starValue = i + 1;
+                final filled = starValue <= _rating;
+                return IconButton(
+                  onPressed: () => setState(() => _rating = starValue),
+                  icon: Icon(
+                    filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: const Color(0xFFF59E0B),
+                    size: 36,
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _commentCtrl,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Comment (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton(
+              onPressed: _submitting ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      'Submit Rating',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

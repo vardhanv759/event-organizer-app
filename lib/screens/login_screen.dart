@@ -172,6 +172,48 @@ class _LoginScreenState extends State<LoginScreen>
     await usersRef.set(data, SetOptions(merge: true));
   }
 
+  /// Maps common FirebaseAuthException codes to clear, actionable text.
+  /// Previously, anything not explicitly handled (account-linking
+  /// conflicts, rate limiting, disabled accounts, network errors) fell
+  /// through to e.message, which is technically accurate but reads as
+  /// raw Firebase internals to a person trying to sign in.
+  String _friendlyAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'account-exists-with-different-credential':
+        // This is the Google <-> email/password collision: someone
+        // registered with email+password using an address, then later
+        // tried "Continue with Google" using that same address (or vice
+        // versa). Firebase blocks the sign-in rather than silently
+        // merging accounts, since merging could let someone hijack an
+        // account just by knowing the email - the user has to go back
+        // to whichever method they originally used.
+        return 'An account already exists for this email using a '
+            'different sign-in method. Try signing in with email & '
+            'password instead, or use "Forgot Password" if needed.';
+      case 'email-already-in-use':
+        return 'An account already exists with this email. Try signing '
+            'in instead, or use "Forgot Password" if you don\'t '
+            'remember your password.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'user-disabled':
+        return 'This account has been disabled. Contact support if you '
+            'believe this is a mistake.';
+      case 'network-request-failed':
+        return 'Network error. Please check your connection and try again.';
+      case 'popup-closed-by-user':
+      case 'cancelled-popup-request':
+      case 'web-context-cancelled':
+        return 'Sign-in was cancelled.';
+      case 'invalid-email':
+        return 'That email address looks invalid.';
+      case 'weak-password':
+        return 'Please choose a stronger password (at least 6 characters).';
+      default:
+        return e.message ?? 'Something went wrong. Please try again.';
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // GOOGLE SIGN-IN
   // ---------------------------------------------------------------------------
@@ -203,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen>
         await _writeUserDocument(user, 'google', {});
       }
     } on FirebaseAuthException catch (e) {
-      _showError(e.message ?? 'Google sign-in failed');
+      _showError(_friendlyAuthError(e));
     } catch (e) {
       _showError('Google sign-in failed: $e');
     } finally {
@@ -267,8 +309,7 @@ class _LoginScreenState extends State<LoginScreen>
         // AuthGate will now detect logged-in user and take them to HomeScreen.
       }
     } on FirebaseAuthException catch (e) {
-      final msg = e.message ?? 'Registration failed';
-      _showError(msg);
+      _showError(_friendlyAuthError(e));
     } catch (e) {
       _showError('Registration failed: $e');
     } finally {
@@ -303,10 +344,10 @@ class _LoginScreenState extends State<LoginScreen>
       String msg;
       if (e.code == 'user-not-found') {
         msg = 'No account found for this email.';
-      } else if (e.code == 'wrong-password') {
+      } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
         msg = 'Incorrect password.';
       } else {
-        msg = e.message ?? 'Login failed';
+        msg = _friendlyAuthError(e);
       }
       _showError(msg);
     } catch (e) {

@@ -3,8 +3,54 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
+/// Standard "good enough" UK postcode pattern (covers all current
+/// postcode area formats: A9 9AA, A99 9AA, AA9 9AA, AA99 9AA, A9A 9AA,
+/// AA9A 9AA). Deliberately permissive rather than validating against a
+/// real postcode database - this catches typos/garbage input, not
+/// "does this postcode actually exist."
+final RegExp _ukPostcodeRegExp = RegExp(r'^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$');
+
+/// Returns null (valid) if empty - postcode is an optional field - or a
+/// validation error message otherwise.
+String? _validateUkPostcode(String? value) {
+  final v = (value ?? '').trim().toUpperCase();
+  if (v.isEmpty) return null;
+  if (!_ukPostcodeRegExp.hasMatch(v)) {
+    return 'Enter a valid UK postcode (e.g. HA9 0WS)';
+  }
+  return null;
+}
+
+/// UK vehicle registration plates have used several formats over the
+/// decades (current, prefix, suffix, and dateless), so this checks
+/// against all of them rather than just the current 2001-onward format -
+/// otherwise older or cherished plates would be wrongly rejected.
+final List<RegExp> _ukPlateFormats = [
+  RegExp(r'^[A-Z]{2}\d{2}[A-Z]{3}$'), // current: AB12 CDE
+  RegExp(r'^[A-Z]\d{1,3}[A-Z]{3}$'), // prefix: A123 BCD
+  RegExp(r'^[A-Z]{3}\d{1,3}[A-Z]$'), // suffix: ABC 123D
+  RegExp(r'^[A-Z]{1,3}\d{1,4}$'), // dateless: A 1, ABC 123
+  RegExp(r'^\d{1,4}[A-Z]{1,3}$'), // dateless: 1 A, 123 ABC
+];
+
+/// Returns null (valid) if empty - vehicle reg is an optional field - or
+/// a validation error message otherwise.
+String? _validateUkPlate(String? value) {
+  final v = (value ?? '').trim().toUpperCase().replaceAll(' ', '');
+  if (v.isEmpty) return null;
+  if (v.length < 2 || v.length > 7) {
+    return 'Enter a valid vehicle registration';
+  }
+  final matches = _ukPlateFormats.any((re) => re.hasMatch(v));
+  if (!matches) {
+    return 'Enter a valid vehicle registration (e.g. AB12 CDE)';
+  }
+  return null;
+}
 
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -28,6 +74,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _uploadingPhoto = false;
+  bool _deleting = false;
 
   String? _photoUrl; // from Firestore/Auth
   String? _email;
@@ -63,8 +110,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
       if (snap.exists) {
         final data = snap.data() as Map<String, dynamic>;
-        _nameCtrl.text = (data['displayName'] ?? user.displayName ?? '')
-            .toString();
+        // 'name' is the canonical field written by login_screen.dart and
+        // read by the entire messaging system (ChatAvatar, ChatUserName,
+        // the parking Host card, etc). This used to read 'displayName' -
+        // a field this screen was the only place that ever wrote, which
+        // meant editing your name here silently desynced from what every
+        // chat/listing showed, since those all read 'name' instead.
+        _nameCtrl.text = (data['name'] ?? user.displayName ?? '').toString();
         _phoneCtrl.text = (data['phone'] ?? '').toString();
         _vehicleCtrl.text = (data['vehicleReg'] ?? '').toString();
         _postcodeCtrl.text = (data['homePostcode'] ?? '').toString();
@@ -75,7 +127,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         _photoUrl = user.photoURL;
 
         await docRef.set({
-          'displayName': _nameCtrl.text.trim(),
+          'name': _nameCtrl.text.trim(),
           'email': user.email,
           'photoUrl': _photoUrl,
           'phone': '',
@@ -111,7 +163,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     try {
       // Update Firestore
       await _db.collection('users').doc(user.uid).set({
-        'displayName': displayName,
+        'name': displayName,
         'email': user.email,
         'photoUrl': _photoUrl,
         'phone': phone,
@@ -160,6 +212,364 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // ACCOUNT DELETION (GDPR)
+  // ---------------------------------------------------------------------
+  //
+  // What this does:
+  //  1. Anonymizes the Firestore profile (clears name/photo/phone/vehicle/
+  //     postcode/email, sets account_deleted + deletedAt). It does NOT
+  //     delete the `users/{uid}` document outright - the security rules
+  //     correctly forbid that (`allow delete: if false`), and even if
+  //     they allowed it, deleting the doc would leave every chat message,
+  //     parking listing, and review that references this uid pointing at
+  //     nothing. Anonymizing satisfies GDPR's "erasure of personal data"
+  //     requirement while keeping the rest of the app's data intact.
+  //  2. Deletes their avatar from Storage.
+  //  3. Deletes the actual Firebase Auth account, so they can no longer
+  //     sign back in.
+  //
+  // What this does NOT do, and would need a Cloud Function (Admin SDK)
+  // to do properly: cascade-clean their parking_spaces listings, chat
+  // messages, or reviews subcollection. The client can't safely do that
+  // here - it would mean either granting broad delete permissions that
+  // weaken the security rules for everyone, or silently leaving a
+  // provider's live listings active after they've "deleted" their
+  // account. Flagging this clearly rather than overstating what a
+  // client-only deletion can actually guarantee.
+  Future<void> _deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final confirmed = await _showDeleteConfirmationDialog();
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    setState(() => _deleting = true);
+
+    try {
+      await _performAccountDeletion(user);
+      // Success - FirebaseAuth's authStateChanges() will fire elsewhere
+      // in the app (e.g. an AuthGate) and take the user back to the
+      // login screen automatically once the Auth account is gone.
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        final reauthed = await _reauthenticate(user);
+        if (reauthed && mounted) {
+          try {
+            await _performAccountDeletion(user);
+          } catch (e2) {
+            _showDeleteError('$e2');
+          }
+        }
+      } else {
+        _showDeleteError(e.message ?? 'Failed to delete account');
+      }
+    } catch (e) {
+      _showDeleteError('$e');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  Future<void> _performAccountDeletion(User user) async {
+    final uid = user.uid;
+
+    try {
+      await _db.collection('users').doc(uid).set({
+        'name': 'Deleted User',
+        'phone': '',
+        'vehicleReg': '',
+        'homePostcode': '',
+        'photoUrl': null,
+        'email': null,
+        'account_deleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // Non-fatal: even if the anonymization write fails (e.g. offline),
+      // still proceed to delete the Auth account below - the person
+      // explicitly asked to delete their account, and leaving them
+      // stuck mid-flow, still able to log back in, would be worse than
+      // a profile doc that didn't get fully scrubbed.
+    }
+
+    if (_photoUrl != null &&
+        _photoUrl!.isNotEmpty &&
+        _photoUrl!.contains('user_profiles%2F')) {
+      try {
+        await _storage.refFromURL(_photoUrl!).delete();
+      } catch (_) {
+        // Non-fatal - see _pickAndUploadPhoto for the same pattern.
+      }
+    }
+
+    await user.delete();
+  }
+
+  Future<bool> _reauthenticate(User user) async {
+    final isGoogle = user.providerData.any((p) => p.providerId == 'google.com');
+    if (isGoogle) {
+      return _reauthenticateWithGoogle(user);
+    }
+    return _reauthenticateWithPassword(user);
+  }
+
+  Future<bool> _reauthenticateWithGoogle(User user) async {
+    try {
+      final provider = GoogleAuthProvider();
+      if (kIsWeb) {
+        await user.reauthenticateWithPopup(provider);
+      } else {
+        await user.reauthenticateWithProvider(provider);
+      }
+      return true;
+    } catch (e) {
+      _showDeleteError('Re-authentication failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _reauthenticateWithPassword(User user) async {
+    final passwordController = TextEditingController();
+    bool obscure = true;
+    bool submitting = false;
+    String? errorText;
+    bool result = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: const Text(
+                'Confirm your password',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'For your security, please re-enter your password for '
+                    '${user.email ?? 'your account'} to continue.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF64748B),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscure,
+                    autofocus: true,
+                    enabled: !submitting,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      errorText: errorText,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure ? Icons.visibility : Icons.visibility_off,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
+                      ),
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          final password = passwordController.text;
+                          if (password.isEmpty) {
+                            setDialogState(
+                              () => errorText = 'Please enter your password',
+                            );
+                            return;
+                          }
+                          setDialogState(() {
+                            submitting = true;
+                            errorText = null;
+                          });
+                          try {
+                            final cred = EmailAuthProvider.credential(
+                              email: user.email ?? '',
+                              password: password,
+                            );
+                            await user.reauthenticateWithCredential(cred);
+                            result = true;
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                          } on FirebaseAuthException catch (e) {
+                            setDialogState(() {
+                              submitting = false;
+                              errorText =
+                                  e.code == 'wrong-password' ||
+                                      e.code == 'invalid-credential'
+                                  ? 'Incorrect password'
+                                  : (e.message ?? 'Re-authentication failed');
+                            });
+                          }
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF7C3AED),
+                  ),
+                  child: submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Text('Confirm'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    passwordController.dispose();
+    return result;
+  }
+
+  Future<bool?> _showDeleteConfirmationDialog() async {
+    final confirmController = TextEditingController();
+    bool canConfirm = false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_rounded, color: Color(0xFFEF4444)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Delete account',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'This permanently deletes your account and signs you '
+                    'out. This cannot be undone.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF334155),
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Your name, photo, phone number, and vehicle details '
+                    'will be removed. Past messages or listings may still '
+                    'reference your account as "Deleted User".',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Type DELETE to confirm',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: confirmController,
+                    textCapitalization: TextCapitalization.characters,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'DELETE',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setDialogState(
+                      () => canConfirm = v.trim().toUpperCase() == 'DELETE',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: canConfirm
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                  ),
+                  child: const Text('Delete forever'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    confirmController.dispose();
+    return result;
+  }
+
+  void _showDeleteError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Couldn\'t delete account: $message'),
+        backgroundColor: const Color(0xFFEF4444),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   Future<void> _pickAndUploadPhoto(ImageSource source) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -174,6 +584,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       if (file == null) return;
 
       setState(() => _uploadingPhoto = true);
+
+      // Capture the outgoing photo before it's replaced, so it can be
+      // cleaned up from Storage once the new one is confirmed uploaded.
+      final previousPhotoUrl = _photoUrl;
 
       final Uint8List bytes = await file.readAsBytes();
 
@@ -199,6 +613,25 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       }, SetOptions(merge: true));
 
       await user.updatePhotoURL(url);
+
+      // Best-effort cleanup of the old avatar now that the new one is
+      // live everywhere it needs to be. Every previous upload used to be
+      // left behind in Storage forever - this only deletes files this
+      // app itself uploaded (under user_profiles/), never a bare Google
+      // photo URL, and a failure here (e.g. already deleted, permission
+      // quirk) is swallowed since it must never block the profile update
+      // the user is actually waiting on.
+      if (previousPhotoUrl != null &&
+          previousPhotoUrl.isNotEmpty &&
+          previousPhotoUrl != url &&
+          previousPhotoUrl.contains('user_profiles%2F')) {
+        try {
+          await _storage.refFromURL(previousPhotoUrl).delete();
+        } catch (_) {
+          // Non-fatal - orphaning one file is far better than blocking
+          // or failing the photo update the user just performed.
+        }
+      }
 
       if (mounted) {
         setState(() => _photoUrl = url);
@@ -523,39 +956,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
-  Widget _buildStatsCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            icon: Icons.event_available_rounded,
-            label: 'Events',
-            value: '0',
-            color: const Color(0xFF7C3AED),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.local_parking_rounded,
-            label: 'Parking',
-            value: '0',
-            color: const Color(0xFF06B6D4),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.restaurant_rounded,
-            label: 'Dining',
-            value: '0',
-            color: const Color(0xFFF59E0B),
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -592,11 +992,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Stats cards
-                          _buildStatsCards(),
-
                           const SizedBox(height: 24),
-
                           const Text(
                             'Personal Information',
                             style: TextStyle(
@@ -655,6 +1051,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                   label: 'Vehicle Registration',
                                   hint: 'e.g., AB12 CDE',
                                   icon: Icons.directions_car_outlined,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  validator: _validateUkPlate,
                                 ),
 
                                 const SizedBox(height: 16),
@@ -664,6 +1063,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                                   label: 'Home Postcode',
                                   hint: 'e.g., HA9 0WS',
                                   icon: Icons.home_outlined,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  validator: _validateUkPostcode,
                                 ),
                               ],
                             ),
@@ -712,6 +1114,93 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                               ],
                             ),
                           ),
+
+                          const SizedBox(height: 32),
+
+                          // Danger zone
+                          const Text(
+                            'Danger Zone',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFEF4444),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0xFFEF4444).withOpacity(0.2),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Deleting your account is permanent. Your '
+                                  'personal details will be removed and you '
+                                  'will be signed out immediately.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF7F1D1D),
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _deleting
+                                        ? null
+                                        : _deleteAccount,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFFEF4444),
+                                      side: const BorderSide(
+                                        color: Color(0xFFEF4444),
+                                        width: 1.4,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    icon: _deleting
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Color(0xFFEF4444),
+                                                  ),
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.delete_forever_rounded,
+                                            size: 18,
+                                          ),
+                                    label: Text(
+                                      _deleting
+                                          ? 'Deleting…'
+                                          : 'Delete My Account',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -735,6 +1224,7 @@ class _EnhancedTextField extends StatelessWidget {
   final IconData icon;
   final bool enabled;
   final TextInputType? keyboardType;
+  final TextCapitalization textCapitalization;
   final String? Function(String?)? validator;
 
   const _EnhancedTextField({
@@ -745,6 +1235,7 @@ class _EnhancedTextField extends StatelessWidget {
     required this.icon,
     this.enabled = true,
     this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
     this.validator,
   });
 
@@ -783,6 +1274,7 @@ class _EnhancedTextField extends StatelessWidget {
             initialValue: initialValue,
             enabled: enabled,
             keyboardType: keyboardType,
+            textCapitalization: textCapitalization,
             validator: validator,
             style: const TextStyle(
               fontSize: 15,
@@ -866,70 +1358,6 @@ class _PhotoOption extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// Stat card widget
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
-            ),
-          ),
-        ],
       ),
     );
   }

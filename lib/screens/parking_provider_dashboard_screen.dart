@@ -2,6 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/booking_service.dart';
+import '../services/messaging_service.dart';
+import '../services/review_service.dart';
 import 'parking_space_register_screen.dart';
 import 'manage_parking_space_screen.dart';
 
@@ -47,6 +50,8 @@ class ParkingProviderDashboardScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _TopStatusCard(status: status),
+                const SizedBox(height: 14),
+                _ActivityStatsGrid(uid: uid),
                 const SizedBox(height: 14),
                 const Text(
                   'Your spaces',
@@ -273,6 +278,185 @@ class _TopStatusCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Real signal a provider actually has right now, given there's no
+/// payment flowing through the app at the moment (booking is request/
+/// chat based - see PrivateParkingMessagesScreen). A revenue figure here
+/// would just show zero, which is worse than not showing one - this
+/// surfaces the things that ARE genuinely happening: how many spaces are
+/// live, how many people are waiting on a reply, how many active
+/// conversations exist, and the host's rating. Swap the "Pending
+/// Requests" card for a real earnings card if/when payments come back.
+class _ActivityStatsGrid extends StatelessWidget {
+  final String uid;
+
+  const _ActivityStatsGrid({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1.05,
+      children: [
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('parking_spaces')
+              .where('providerId', isEqualTo: uid)
+              .snapshots(),
+          builder: (context, snap1) {
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('parking_spaces')
+                  .where('provider_uid', isEqualTo: uid)
+                  .snapshots(),
+              builder: (context, snap2) {
+                final ids = <String>{
+                  ...?snap1.data?.docs.map((d) => d.id),
+                  ...?snap2.data?.docs.map((d) => d.id),
+                };
+                return _StatCard(
+                  icon: Icons.local_parking_rounded,
+                  color: const Color(0xFF6366F1),
+                  value: '${ids.length}',
+                  label: 'Spaces',
+                );
+              },
+            );
+          },
+        ),
+        StreamBuilder<int>(
+          stream: MessagingService.pendingRequestsCountStream(uid),
+          builder: (context, snap) {
+            return _StatCard(
+              icon: Icons.mark_unread_chat_alt_rounded,
+              color: const Color(0xFFF59E0B),
+              value: '${snap.data ?? 0}',
+              label: 'Pending',
+            );
+          },
+        ),
+        StreamBuilder<int>(
+          stream: BookingService.needsConfirmationCountStream(uid),
+          builder: (context, snap) {
+            final count = snap.data ?? 0;
+            return _StatCard(
+              icon: Icons.fact_check_rounded,
+              color: count > 0
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFF94A3B8),
+              value: '$count',
+              label: 'Needs confirmation',
+            );
+          },
+        ),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('chats')
+              .where('participants', arrayContains: uid)
+              .snapshots(),
+          builder: (context, snap) {
+            return _StatCard(
+              icon: Icons.forum_rounded,
+              color: const Color(0xFF10B981),
+              value: '${snap.data?.docs.length ?? 0}',
+              label: 'Chats',
+            );
+          },
+        ),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: BookingService.myBookingsAsProvider(),
+          builder: (context, snap) {
+            final earnings = BookingService.totalEarningsFrom(
+              snap.data?.docs ?? [],
+            );
+            return _StatCard(
+              icon: Icons.payments_rounded,
+              color: const Color(0xFF10B981),
+              value: '£${earnings.toStringAsFixed(0)}',
+              label: 'Earnings',
+            );
+          },
+        ),
+        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: ReviewService.statsStream(uid),
+          builder: (context, statsSnap) {
+            final statsData = statsSnap.data?.data();
+            final ratingAvg = ReviewService.hostAverageFrom(statsData);
+            final ratingCount = ReviewService.hostCountFrom(statsData);
+            return _StatCard(
+              icon: Icons.star_rounded,
+              color: const Color(0xFFF59E0B),
+              value: ratingCount > 0 ? ratingAvg.toStringAsFixed(1) : '—',
+              label: ratingCount > 0 ? '$ratingCount reviews' : 'No reviews',
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String value;
+  final String label;
+
+  const _StatCard({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+              color: Colors.grey.shade500,
             ),
           ),
         ],
